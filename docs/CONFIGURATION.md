@@ -10,6 +10,7 @@
 | MONGODB_URI                | 服务端连接；不要把参考项目数据库名当成本应用的目标库   |
 | MONGODB_DB                 | 生产 binance_agent_os；开发和预览 binance_agent_os_dev |
 | REDIS_URL                  | 可访问的实例地址；必须实际 PING 成功                   |
+| BAO_REDIS_URL              | 独立 Marketplace Redis；配置后优先于旧 REDIS_URL       |
 | GOOGLE_OC_JSON             | base64 编码的 Google 服务账号 JSON，仅服务端           |
 | GOOGLE_CLOUD_PROJECT       | 与该账号 project_id 相匹配的 GCP 项目                  |
 | GOOGLE_CLOUD_LOCATION      | global                                                 |
@@ -47,3 +48,6 @@ VERCEL_DEPLOY_SCOPE 与本地关联一致，且仅操作 binance-agent-os 项目
 
 如果 Redis 不通，不得把限流改成进程内计数并宣称生产已就绪。
 如果配置地址无法访问，先定位源实例、TLS、网络许可，再决定是否需要新实例授权。
+生产项目使用 `BAO_` 前缀绑定独立 Redis，避免 Marketplace 覆盖或泄露参考项目的
+`REDIS_URL`。应用仍统一以 `REDIS_URL` 语义使用连接，所有键继续使用
+`binance-agent:<environment>:` 前缀。

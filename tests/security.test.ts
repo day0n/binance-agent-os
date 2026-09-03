@@ -59,6 +59,13 @@ describe("credential and owner boundary", () => {
     expect(() => config()).toThrow();
     process.env.MONGODB_DB = previous;
   });
+  it("prefers the isolated marketplace Redis connection", () => {
+    const previous = process.env.BAO_REDIS_URL;
+    process.env.BAO_REDIS_URL = "rediss://isolated.example.test:6380";
+    expect(config().REDIS_URL).toBe("rediss://isolated.example.test:6380");
+    if (previous) process.env.BAO_REDIS_URL = previous;
+    else delete process.env.BAO_REDIS_URL;
+  });
 });
 describe("MCP fail-closed policy", () => {
   const schema = { type: "object", properties: { symbol: { type: "string" } } };

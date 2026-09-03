@@ -10,7 +10,10 @@ const envSchema = z.object({
     .string()
     .regex(/^binance_agent_os(?:_[a-z0-9_]+)?$/)
     .default("binance_agent_os_dev"),
-  REDIS_URL: z.string().min(1),
+  // Marketplace resources are namespaced so they cannot overwrite a legacy
+  // reference connection. config() normalizes the selected value to REDIS_URL.
+  BAO_REDIS_URL: z.string().min(1).optional(),
+  REDIS_URL: z.string().min(1).optional(),
   APP_ENV: z
     .enum(["development", "preview", "production", "test"])
     .default("development"),
@@ -50,6 +53,9 @@ export function config() {
       503,
     );
   const v = parsed.data;
+  const redisUrl = v.BAO_REDIS_URL ?? v.REDIS_URL;
+  if (!redisUrl)
+    throw new AppError("CONFIG_MISSING", "服务端配置未完成：REDIS_URL", 503);
   if (
     v.APP_ENV === "production" &&
     (v.MONGODB_DB !== "binance_agent_os" ||
@@ -66,7 +72,7 @@ export function config() {
       "开发或预览环境不能使用生产数据库。",
       503,
     );
-  return v;
+  return { ...v, REDIS_URL: redisUrl };
 }
 export function modelConfig(provider: Provider, role?: AgentRole) {
   const c = config();
