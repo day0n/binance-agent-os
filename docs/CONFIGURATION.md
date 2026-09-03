@@ -2,23 +2,23 @@
 
 ## 环境变量
 
-| 配置                       | 含义                                                   |
-| -------------------------- | ------------------------------------------------------ |
-| APP_ORIGIN                 | 唯一公开 HTTPS 站点，OAuth 回调和 Origin 校验基于它    |
-| APP_SECRET                 | 至少 32 随机字节的 hex；签名 Cookie 和加密连接         |
-| APP_ENV                    | development / preview / production / test              |
-| MONGODB_URI                | 服务端连接；不要把参考项目数据库名当成本应用的目标库   |
-| MONGODB_DB                 | 生产 binance_agent_os；开发和预览 binance_agent_os_dev |
-| REDIS_URL                  | 可访问的实例地址；必须实际 PING 成功                   |
-| BAO_REDIS_URL              | 独立 Marketplace Redis；配置后优先于旧 REDIS_URL       |
-| GOOGLE_OC_JSON             | base64 编码的 Google 服务账号 JSON，仅服务端           |
-| GOOGLE_CLOUD_PROJECT       | 与该账号 project_id 相匹配的 GCP 项目                  |
-| GOOGLE_CLOUD_LOCATION      | global                                                 |
-| GEMINI_MODEL               | gemini-3.8-flash                                       |
-| GEMINI_THINKING_LEVEL      | HIGH；不接受静默降档                                   |
-| GEMINI_MAX_OUTPUT_TOKENS   | 默认 32768，控制单次输出含思考的上限，不等于思考档位   |
-| ROLE_MODELS_JSON           | 可选角色模型 ID 映射，同一 provider 内有效             |
-| BINANCE_TOOL_BINDINGS_JSON | 审核后的确切工具映射，默认 {} 会阻止运行               |
+| 配置                       | 含义                                                    |
+| -------------------------- | ------------------------------------------------------- |
+| APP_ORIGIN                 | 唯一公开 HTTPS 站点，Origin 校验与未来 OAuth 回调基于它 |
+| APP_SECRET                 | 至少 32 随机字节的 hex；签名 Cookie 和加密连接          |
+| APP_ENV                    | development / preview / production / test               |
+| MONGODB_URI                | 服务端连接；不要把参考项目数据库名当成本应用的目标库    |
+| MONGODB_DB                 | 生产 binance_agent_os；开发和预览 binance_agent_os_dev  |
+| REDIS_URL                  | 可访问的实例地址；必须实际 PING 成功                    |
+| BAO_REDIS_URL              | 独立 Marketplace Redis；配置后优先于旧 REDIS_URL        |
+| GOOGLE_OC_JSON             | base64 编码的 Google 服务账号 JSON，仅服务端            |
+| GOOGLE_CLOUD_PROJECT       | 与该账号 project_id 相匹配的 GCP 项目                   |
+| GOOGLE_CLOUD_LOCATION      | global                                                  |
+| GEMINI_MODEL               | gemini-3.8-flash                                        |
+| GEMINI_THINKING_LEVEL      | HIGH；不接受静默降档                                    |
+| GEMINI_MAX_OUTPUT_TOKENS   | 默认 32768，控制单次输出含思考的上限，不等于思考档位    |
+| ROLE_MODELS_JSON           | 可选角色模型 ID 映射，同一 provider 内有效              |
+| BINANCE_TOOL_BINDINGS_JSON | 审核后的确切工具映射，默认 {} 会阻止运行                |
 
 OpenAI/Anthropic 接口保留为显式选择的可选 provider；不会自动切换来掩盖 Gemini 错误。
 环境缺少密钥会返回配置错误，配置存在不代表真实调用已成功。
@@ -33,7 +33,8 @@ VERCEL_DEPLOY_SCOPE 与本地关联一致，且仅操作 binance-agent-os 项目
 只在取得凭据持有人对目标空间的明确授权后使用。复用服务账号会共享 Google Cloud 权限与账单；
 更独立的长期方案是专用、最小权限的 Vertex AI 服务账号。
 
-生产与 Preview 分别配置。预览没有单独、公开可访问的固定 Origin 时，不启用 OAuth。
+生产与 Preview 分别配置。Binance 当前未支持本自建 Web Agent，网站 OAuth 入口保持禁用；
+未来获得官方支持后，预览环境没有单独、公开可访问的固定 Origin 时仍不得启用 OAuth。
 生产 APP_SECRET 不要随意更换：更换会使现有 Cookie 和加密令牌失效，必须重新授权。
 环境变量变更后需要重新部署；部署完成后分别检查页面、bootstrap 与 ready 接口。
 

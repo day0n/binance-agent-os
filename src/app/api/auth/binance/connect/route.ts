@@ -1,15 +1,13 @@
-import { beginAuthorization } from "@/adapters/binance/oauth";
-import { owner, requireOrigin, apiError } from "@/adapters/http/session";
-import { rateLimit } from "@/adapters/persistence/redis";
+import { requireOrigin, apiError } from "@/adapters/http/session";
+import { AppError } from "@/domain/errors";
 export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     requireOrigin(request);
-    const id = await owner();
-    await rateLimit(`oauth:${id}`, 5, 600);
-    return Response.json(
-      { url: await beginAuthorization(id) },
-      { headers: { "Cache-Control": "no-store" } },
+    throw new AppError(
+      "BINANCE_WEB_CLIENT_UNSUPPORTED",
+      "Binance 当前尚未支持任意自建网站作为 Agentic MCP OAuth 客户端。请按页面说明使用官方支持的 Codex 客户端接入。",
+      503,
     );
   } catch (e) {
     return apiError(e);

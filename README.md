@@ -16,9 +16,13 @@ Next.js + TypeScript + Vercel Workflow + MongoDB + Redis。
 
 ## 当前状态
 
-主体架构和界面已实现；Gemini HIGH 的真实单轮与多轮工具调用已验证。
-**三个金融流程的端到端验收仍需用户完成币安 OAuth、审核实际 MCP 工具 Schema，并通过数据库与 Redis 就绪检查。**
-空工具映射会安全阻止运行，不代表免登录行情已接通。详见 [验收记录](docs/VALIDATION.md)。
+主体架构和界面已实现；Gemini HIGH、MongoDB、独立 Redis 均已验证。
+官方支持的 Codex 客户端已经完成 Binance OAuth、真实工具发现、BTCUSDT 行情/K 线读取，
+并把 59 根真实已收盘日线送入项目的确定性回测引擎。
+
+Binance 当前会拒绝任意自建网站 Agent 的 OAuth（错误 3346001），因此 Vercel 页面不会冒用
+Codex 身份或复制其令牌，线上金融任务保持禁用。**这不是三个生产 Web 流程的端到端验收。**
+详见 [MCP 接入边界](docs/MCP.md) 与 [验收记录](docs/VALIDATION.md)。
 
 ## 本地开发
 

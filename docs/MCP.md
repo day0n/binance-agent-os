@@ -6,24 +6,44 @@
 - OAuth metadata: https://agent.binance.com/.well-known/oauth-authorization-server
 - Protected-resource metadata: https://agent.binance.com/.well-known/oauth-protected-resource/gateway-mcp
 
-本次未授权 initialize 返回 401；不能假设免登录行情。
-认证使用授权码 + PKCE S256 + Client ID Metadata Document。
-没有把 refresh_token 当成必定可用；过期后要求重新授权。
+未授权 initialize 返回 401；不能假设免登录行情。认证使用授权码与 PKCE S256。
 
-## 连接
+## 当前支持边界（2026-09-04）
 
-1. 将应用部署到公开 HTTPS，确认 /.well-known/oauth-client.json 无需登录即可读取。
-2. APP_ORIGIN 必须匹配该域名；元数据中的回调固定为 /api/auth/binance/callback。
-3. 用户本人点击“连接币安”并完成币安授权，应用不替用户确认资金权限。
-4. 在“连接与偏好”点击“检查工具目录”，读取实际的 tools/list。
+Binance 官方文档当前列出的客户端包括 Claude、Codex、ChatGPT、VS Code 与 Grok Bot，
+并说明其他 Agent 将继续扩展。实测把本站 HTTPS 元数据 URL 作为 `client_id` 发起授权时，
+Binance 返回错误 3346001“当前 Agent 暂时不支持”。因此：
+
+- 生产网站不再展示一个必然失败的“连接币安”按钮。
+- 不冒用 `codex` client ID，也不从 Codex 凭据存储导出令牌给网站。
+- `/api/auth/binance/connect` 当前明确返回 `BINANCE_WEB_CLIENT_UNSUPPORTED`。
+- 保留 OAuth 适配器代码，等待 Binance 正式支持自建 Web Agent 后再启用并复验。
+
+官方说明：https://developers.binance.com/en/docs/agent-native/mcp-server/agentic
+
+## 已验证的 Codex 连接
+
+使用官方文档给出的 Codex 客户端标识完成 OAuth：
+
+```sh
+codex mcp add binance-mcp-server \
+  --url https://agent.binance.com/mcp/agentic \
+  --oauth-client-id codex
+```
+
+用户本人在 Binance 页面完成授权。项目不读取、导出或复制 Codex 保存的 OAuth 令牌。
+本次连接后已通过真实 MCP 完成 `tool_search`、`spot.ticker24hr` 和 `spot.klines` 只读调用。
 
 断开连接删除应用内的加密令牌和未完成 state，不宣称币安侧授权已被撤销。
 币安侧撤权由用户在其授权管理完成。
 
 ## 工具审核
 
-未登录时工具名与 Schema 不可核验，因此仓库不预填猜测的工具名。
-审核后为 candles、prices、balances 等能力配置：
+当前工具发现确认 MCP 通过通用 `tool_execute` 执行已搜索到的工具。已核对的公开市场工具为
+`spot.ticker24hr` 与 `spot.klines`；账户读取工具 `spot.getAccount` 仅完成名称和输入结构发现，
+尚未执行。生产网站仍不预填无法使用其自身 OAuth 会话执行的工具绑定。
+
+未来 Web Agent 获支持后，为 candles、prices、balances 等能力配置：
 
 - name：官方返回的确切名称。
 - schemaHash：该工具 inputSchema 的 SHA-256（工具目录接口会给出）。

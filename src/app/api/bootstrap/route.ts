@@ -10,6 +10,13 @@ export async function GET() {
     return Response.json(
       {
         connection: await connectionStatus(id),
+        mcp: {
+          websiteOAuthSupported: false,
+          supportedClient: "Codex",
+          verifiedAt: "2026-09-04T02:23:00+08:00",
+          documentationUrl:
+            "https://developers.binance.com/en/docs/agent-native/mcp-server/agentic",
+        },
         providers: [
           {
             id: "gemini",

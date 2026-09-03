@@ -31,7 +31,6 @@ import {
   ShieldCheck,
   Square,
   Sun,
-  Unplug,
   Wallet,
   X,
 } from "lucide-react";
@@ -59,6 +58,12 @@ const Report = dynamic(
 
 type Bootstrap = {
   connection: { connected: boolean; connectedAt: string | null };
+  mcp: {
+    websiteOAuthSupported: boolean;
+    supportedClient: string;
+    verifiedAt: string | null;
+    documentationUrl: string;
+  };
   providers: {
     id: Provider;
     available: boolean;
@@ -170,7 +175,6 @@ export function Workbench() {
   const [settings, setSettings] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
   const [mobileNav, setMobileNav] = useState(false);
-  const [catalog, setCatalog] = useState<unknown[] | null>(null);
   const cursor = useRef(0);
   const requestId = useRef<string | null>(null);
   const running = run?.status === "queued" || run?.status === "running";
@@ -182,11 +186,6 @@ export function Workbench() {
     const result = await api<{ runs: HistoryItem[] }>("/api/runs");
     setHistory(result.runs);
     setHistoryLoaded(true);
-  }, []);
-  const refreshBootstrap = useCallback(async () => {
-    const result = await api<Bootstrap>("/api/bootstrap");
-    setBootstrap(result);
-    return result;
   }, []);
   useEffect(() => {
     let mounted = true;
@@ -206,8 +205,8 @@ export function Workbench() {
       queueMicrotask(() => {
         setNotice(
           connection === "success"
-            ? "币安授权连接成功。可以检查官方工具目录。"
-            : "币安授权未完成或已过期，请重新连接。",
+            ? "旧版网站授权回调已返回，但 Binance 当前不支持本自建 Web Agent；请使用页面列出的 Codex 接入。"
+            : "旧版网站授权未完成。Binance 当前仅支持官方列出的 Agent 客户端。",
         );
         window.history.replaceState({}, "", "/");
       });
@@ -270,20 +269,6 @@ export function Workbench() {
       clearTimeout(reconnect);
     };
   }, [activeId, refreshHistory]);
-  async function connectBinance() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api<{ url: string }>(
-        "/api/auth/binance/connect",
-        {},
-      );
-      window.location.assign(result.url);
-    } catch (e) {
-      setError((e as Error).message);
-      setBusy(false);
-    }
-  }
   async function submit() {
     setError(null);
     setBusy(true);
@@ -367,23 +352,6 @@ export function Workbench() {
       setError((e as Error).message);
     }
   }
-  async function inspectTools() {
-    setBusy(true);
-    try {
-      const result = await api<{ tools: unknown[] }>(
-        "/api/connection/tools",
-        {},
-      );
-      setCatalog(result.tools);
-      setNotice(
-        `已从官方 MCP 发现 ${result.tools.length} 个工具。未审核工具不会自动获得执行权限。`,
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   function downloadReport() {
     if (!report) return;
     const blob = new Blob([JSON.stringify(report, null, 2)], {
@@ -414,10 +382,13 @@ export function Workbench() {
   );
 
   const connected = Boolean(bootstrap?.connection.connected);
+  const webConnectionUsable =
+    connected && Boolean(bootstrap?.mcp.websiteOAuthSupported);
+  const mcpValidated = Boolean(bootstrap?.mcp.verifiedAt);
   const model = bootstrap?.providers.find((p) => p.id === provider);
   const canSubmit =
     !busy &&
-    connected &&
+    webConnectionUsable &&
     prompt.trim().length >= 2 &&
     Boolean(model?.available);
   const visibleHistory = history.filter(
@@ -531,17 +502,15 @@ export function Workbench() {
           <span className="independent-label">独立研究工具</span>
           <button
             className="primary-button connect-button"
-            disabled={busy || !bootstrap}
-            onClick={() =>
-              connected ? setSettings(true) : void connectBinance()
-            }
+            disabled={!bootstrap}
+            onClick={() => setSettings(true)}
           >
             {busy ? (
               <LoaderCircle size={16} className="spin" />
             ) : (
               <Link2 size={16} />
             )}
-            {connected ? "已连接" : "连接币安"}
+            MCP 接入
           </button>
           <button
             className="icon-button desktop-action"
@@ -651,15 +620,15 @@ export function Workbench() {
                     <span className="mini-icon muted">
                       <Activity size={14} />
                     </span>
-                    连接状态
+                    接入验证
                   </span>
-                  <strong className={connected ? "positive" : "subtle"}>
+                  <strong className={mcpValidated ? "positive" : "subtle"}>
                     {!bootstrap ? (
                       <span className="skeleton" />
-                    ) : connected ? (
-                      "已连接"
+                    ) : mcpValidated ? (
+                      "Codex 已验证"
                     ) : (
-                      "待授权"
+                      "待验证"
                     )}
                   </strong>
                 </div>
@@ -833,10 +802,12 @@ export function Workbench() {
                       <span className="connection-state">
                         <i
                           className={
-                            connected ? "status-dot online" : "status-dot"
+                            mcpValidated ? "status-dot online" : "status-dot"
                           }
                         />
-                        {connected ? "数据源已连接" : "等待连接数据源"}
+                        {mcpValidated
+                          ? "MCP 已验证 · Web 待支持"
+                          : "等待 MCP 验证"}
                       </span>
                     </div>
                     <div className="input-settings">
@@ -1064,19 +1035,18 @@ export function Workbench() {
                     <div className="composer-note">
                       <ShieldCheck size={14} />
                       <span>
-                        {!connected
-                          ? "完成币安 OAuth 授权后开始使用。凭据仅保存在服务端。"
+                        {!webConnectionUsable
+                          ? "Binance 暂未开放自建网站 OAuth；线上任务保持禁用，不会伪造接入。"
                           : !capabilitiesReady
                             ? "只读工具尚待审核；未配置时明确报错，不使用模拟行情。"
                             : "只读工具已配置。研究结果将附带数据来源与时间。"}
                       </span>
-                      {!connected && (
+                      {!webConnectionUsable && (
                         <button
                           className="text-button"
-                          disabled={busy || !bootstrap}
-                          onClick={() => void connectBinance()}
+                          onClick={() => setSettings(true)}
                         >
-                          去连接
+                          查看接入方式
                           <ChevronRight size={13} />
                         </button>
                       )}
@@ -1461,9 +1431,9 @@ export function Workbench() {
             <div className="guide-steps">
               {[
                 {
-                  title: "连接币安",
+                  title: "通过 Codex 接入",
                   icon: Link2,
-                  body: "由你本人完成官方 OAuth 授权。连接凭据加密存放在服务端，不进入模型上下文。",
+                  body: "Binance 当前支持 Codex 等指定客户端。项目已通过官方 Codex OAuth 完成真实只读行情验证；自建网站直连尚未开放。",
                 },
                 {
                   title: "提出研究问题",
@@ -1493,7 +1463,7 @@ export function Workbench() {
                 ],
                 [
                   "为什么连接后仍可能无法开始研究？",
-                  "数据连接、模型和已审核工具都必须可用。依赖异常或工具尚未配置会明确报错，不会拿模拟行情代替。",
+                  "Binance 当前不接受任意自建网站作为 Agentic MCP OAuth 客户端。网页端因此保持禁用；依赖异常或工具尚未配置时也不会拿模拟行情代替。",
                 ],
                 [
                   "回测中的费用和滑点是什么？",
@@ -1623,60 +1593,36 @@ export function Workbench() {
           <section className="settings-block">
             <div className="settings-title">
               <h3>Binance 官方 MCP</h3>
-              <span className={"status-tag" + (connected ? " connected" : "")}>
-                {connected ? "已连接" : "未连接"}
+              <span
+                className={"status-tag" + (mcpValidated ? " connected" : "")}
+              >
+                {mcpValidated ? "Codex 已验证" : "待验证"}
               </span>
             </div>
             <p>
-              首次授权和币安侧撤权由你本人完成。OAuth 凭据仅加密保存在服务端。
+              Binance 当前仅支持官方列出的 Agent 客户端，任意自建网站 OAuth
+              会返回 3346001。本站不再引导无效授权，也不会冒用 Codex 身份或复制
+              Codex 凭据。
             </p>
             <div className="settings-actions">
-              <button
+              <a
                 className="primary-button"
-                disabled={busy || !bootstrap}
-                onClick={() => void connectBinance()}
+                href={
+                  bootstrap?.mcp.documentationUrl ??
+                  "https://developers.binance.com/en/docs/agent-native/mcp-server/agentic"
+                }
+                target="_blank"
+                rel="noreferrer"
               >
-                {busy ? (
-                  <LoaderCircle className="spin" size={16} />
-                ) : (
-                  <Link2 size={16} />
-                )}
-                {connected ? "重新授权" : "连接币安"}
-              </button>
-              {connected && (
-                <>
-                  <button
-                    className="secondary-button"
-                    disabled={busy}
-                    onClick={() => void inspectTools()}
-                  >
-                    检查工具目录
-                  </button>
-                  <button
-                    className="icon-button"
-                    aria-label="断开币安连接"
-                    onClick={() => {
-                      void api("/api/auth/binance/disconnect", {})
-                        .then(() => refreshBootstrap())
-                        .then(() =>
-                          setNotice(
-                            "应用内连接已断开；币安侧撤权请在币安授权管理中完成。",
-                          ),
-                        )
-                        .catch((e) => setError(e.message));
-                    }}
-                  >
-                    <Unplug size={18} />
-                  </button>
-                </>
-              )}
+                <BookOpen size={16} />
+                官方接入文档
+                <ExternalLink size={14} />
+              </a>
             </div>
-            {catalog && (
-              <details className="catalog">
-                <summary>{catalog.length} 个工具 · 原始 Schema</summary>
-                <pre>{JSON.stringify(catalog, null, 2)}</pre>
-              </details>
-            )}
+            <p>
+              已验证只读工具：spot.ticker24hr、spot.klines。账户、交易、转账、借贷和提现
+              均未授权或执行。
+            </p>
           </section>
           <section className="settings-block">
             <h3>模型服务</h3>
