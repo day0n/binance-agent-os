@@ -2,48 +2,39 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+import { roleNames, number, date } from "./format";
 import {
   Activity,
   ArrowDownToLine,
   ArrowRight,
-  ArrowUpRight,
   BarChart3,
   BookOpen,
   Check,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
-  Circle,
   Clock3,
   ExternalLink,
   FileText,
   FlaskConical,
   GitBranch,
-  Layers3,
+  Headphones,
+  Info,
   Link2,
   LoaderCircle,
   Menu,
+  Moon,
   Plus,
   Search,
   Settings2,
   Shield,
   ShieldCheck,
   Square,
+  Sun,
   Unplug,
   Wallet,
   X,
 } from "lucide-react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import type {
   AnalysisReport,
   AgentRole,
@@ -53,6 +44,18 @@ import type {
   RunMode,
   RunStatus,
 } from "@/domain/contracts";
+import { Dialog, Select } from "./ui";
+
+const Report = dynamic(
+  () => import("./report").then((module) => module.Report),
+  {
+    loading: () => (
+      <div className="report-loading" role="status">
+        正在加载报告与图表…
+      </div>
+    ),
+  },
+);
 
 type Bootstrap = {
   connection: { connected: boolean; connectedAt: string | null };
@@ -105,16 +108,6 @@ const modes = [
     prompt: "回测选定策略，与买入持有比较，说明费用、回撤和样本局限。",
   },
 ];
-const roleNames: Record<AgentRole, string> = {
-  supervisor: "研究主管",
-  market: "市场分析师",
-  portfolio: "账户分析师",
-  strategy: "策略研究员",
-  bull: "多方研究员",
-  bear: "空方研究员",
-  risk: "风险复核员",
-  report: "报告编审",
-};
 const statusNames: Record<RunStatus, string> = {
   queued: "等待执行",
   running: "研究中",
@@ -122,17 +115,6 @@ const statusNames: Record<RunStatus, string> = {
   failed: "未完成",
   cancelled: "已取消",
 };
-const pct = (n: number) => `${n >= 0 ? "+" : ""}${(n * 100).toFixed(2)}%`;
-const number = (n: number) =>
-  n.toLocaleString("en-US", { maximumFractionDigits: 2 });
-const date = (value: string | number) =>
-  new Date(value).toLocaleString("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
 async function api<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(
     path,
@@ -158,6 +140,11 @@ function Mark() {
 }
 
 export function Workbench() {
+  const [page, setPage] = useState<"overview" | "history" | "help">("overview");
+  const [outputTab, setOutputTab] = useState<"report" | "events">("report");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyFilter, setHistoryFilter] = useState("all");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [mode, setMode] = useState<RunMode>("research");
   const [provider, setProvider] = useState<Provider>("gemini");
@@ -172,6 +159,7 @@ export function Workbench() {
   const [maxGross, setMaxGross] = useState(80);
   const [prompt, setPrompt] = useState("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [run, setRun] = useState<RunView | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [report, setReport] = useState<AnalysisReport | null>(null);
@@ -186,10 +174,14 @@ export function Workbench() {
   const cursor = useRef(0);
   const requestId = useRef<string | null>(null);
   const running = run?.status === "queued" || run?.status === "running";
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
   const selected = modes.find((m) => m.id === mode)!;
   const refreshHistory = useCallback(async () => {
     const result = await api<{ runs: HistoryItem[] }>("/api/runs");
     setHistory(result.runs);
+    setHistoryLoaded(true);
   }, []);
   const refreshBootstrap = useCallback(async () => {
     const result = await api<Bootstrap>("/api/bootstrap");
@@ -336,6 +328,8 @@ export function Workbench() {
     }
   }
   async function openRun(item: HistoryItem) {
+    setPage("overview");
+    setOutputTab("report");
     if (item._id === activeId) {
       setMobileNav(false);
       return;
@@ -349,6 +343,8 @@ export function Workbench() {
     setMode(item.input.mode);
   }
   function newResearch() {
+    setPage("overview");
+    setOutputTab("report");
     setActiveId(null);
     setRun(null);
     setReport(null);
@@ -417,714 +413,1276 @@ export function Workbench() {
     bootstrap?.capabilities.includes(c),
   );
 
-  return (
-    <div className="app-shell">
-      {mobileNav && (
-        <button
-          className="sidebar-backdrop"
-          aria-label="关闭导航"
-          onClick={() => setMobileNav(false)}
-        />
-      )}
-      <aside className={`sidebar ${mobileNav ? "is-open" : ""}`}>
-        <Link href="/" className="brand">
-          <Mark />
-          <span>
-            Agent OS<small>BINANCE RESEARCH DESK</small>
-          </span>
-        </Link>
-        <button className="new-button" onClick={newResearch}>
-          <Plus size={17} /> 新建研究 <span>↗</span>
-        </button>
-        <div className="nav-label">工作空间</div>
-        <nav>
-          {modes.map((m) => (
-            <button
-              key={m.id}
-              className={`nav-item ${mode === m.id ? "active" : ""}`}
-              onClick={() => {
-                setMode(m.id);
-                setMobileNav(false);
-                requestId.current = null;
-              }}
-            >
-              <m.icon size={18} />
-              <span>{m.title}</span>
-              {mode === m.id && <span className="nav-dot" />}
-            </button>
-          ))}
-        </nav>
-        <div className="history-heading">
-          <span className="nav-label">最近研究</span>
-          <Clock3 size={13} />
-        </div>
-        <div className="history-list">
-          {history.length ? (
-            history.map((item) => (
-              <button
-                key={item._id}
-                className={`history-item ${activeId === item._id ? "selected" : ""}`}
-                onClick={() => void openRun(item)}
-              >
-                <FileText size={14} />
-                <span>{item.input.prompt}</span>
-                <i className={`history-dot ${item.status}`} />
-              </button>
-            ))
-          ) : (
-            <div className="empty-history">
-              每次研究的过程与证据
-              <br />
-              都会留在这里。
-            </div>
-          )}
-        </div>
-        <div className="sidebar-bottom">
-          <div className="connection-card">
-            <div className="connection-card-top">
-              <span
-                className={`status-light ${bootstrap?.connection.connected ? "online" : ""}`}
-              />{" "}
-              Binance MCP <span className="tiny-tag">官方接口</span>
-            </div>
-            <p>
-              {bootstrap?.connection.connected
-                ? "已连接 · 应用仅允许读取"
-                : "连接后开始使用真实数据"}
-            </p>
-            <button
-              onClick={() =>
-                bootstrap?.connection.connected
-                  ? setSettings(true)
-                  : void connectBinance()
-              }
-              disabled={busy || !bootstrap}
-            >
-              {bootstrap?.connection.connected ? "管理连接" : "连接币安"}
-              <ArrowUpRight size={14} />
-            </button>
-          </div>
-          <button className="nav-item" onClick={() => setSettings(true)}>
-            <Settings2 size={17} />
-            连接与偏好
+  const connected = Boolean(bootstrap?.connection.connected);
+  const model = bootstrap?.providers.find((p) => p.id === provider);
+  const canSubmit =
+    !busy &&
+    connected &&
+    prompt.trim().length >= 2 &&
+    Boolean(model?.available);
+  const visibleHistory = history.filter(
+    (item) =>
+      (historyFilter === "all" ||
+        (historyFilter === "running"
+          ? ["queued", "running"].includes(item.status)
+          : item.status === historyFilter)) &&
+      (item.input.prompt + item.input.symbol)
+        .toLowerCase()
+        .includes(historyQuery.toLowerCase()),
+  );
+  function selectMode(next: RunMode) {
+    if (next !== mode || page !== "overview") newResearch();
+    setMode(next);
+    setPage("overview");
+    setMobileNav(false);
+    requestId.current = null;
+  }
+  function useExample() {
+    setPrompt(selected.prompt.replace("BTC", symbol.replace(/USDT$/, "")));
+    requestId.current = null;
+    document
+      .getElementById("research-question")
+      ?.focus({ preventScroll: true });
+  }
+  function taskTabs() {
+    return (
+      <div className="task-tabs" role="tablist" aria-label="研究类型">
+        {modes.map((m) => (
+          <button
+            key={m.id}
+            id={"tab-" + m.id}
+            role="tab"
+            aria-selected={mode === m.id}
+            aria-controls="research-workspace"
+            tabIndex={mode === m.id ? 0 : -1}
+            onKeyDown={(event) => {
+              if (
+                !["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)
+              )
+                return;
+              event.preventDefault();
+              const at = modes.findIndex((item) => item.id === mode);
+              const next =
+                event.key === "Home"
+                  ? 0
+                  : event.key === "End"
+                    ? 2
+                    : (at + (event.key === "ArrowRight" ? 1 : 2)) % 3;
+              selectMode(modes[next].id);
+              document.getElementById("tab-" + modes[next].id)?.focus();
+            }}
+            className={mode === m.id ? "active" : ""}
+            onClick={() => selectMode(m.id)}
+          >
+            {m.title}
+            {m.id === "backtest" && <span className="tab-badge">模拟</span>}
           </button>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="app-shell" data-theme={theme}>
+      <a href="#main-content" className="skip-link">
+        跳转到主要内容
+      </a>
+      <header className="global-header">
+        <Link href="/" className="brand" aria-label="Agent OS 首页">
+          <Mark />
+          <span>Agent OS</span>
+        </Link>
+        <span className="brand-divider" />
+        <nav className="global-nav" aria-label="主导航">
+          <button
+            className={
+              page === "overview" && mode === "research" ? "active" : ""
+            }
+            onClick={() => selectMode("research")}
+          >
+            市场研究
+          </button>
+          <button
+            className={
+              page === "overview" && mode === "portfolio" ? "active" : ""
+            }
+            onClick={() => selectMode("portfolio")}
+          >
+            现货账户
+          </button>
+          <button
+            className={
+              page === "overview" && mode === "backtest" ? "active" : ""
+            }
+            onClick={() => selectMode("backtest")}
+          >
+            策略回测
+          </button>
+          <button onClick={() => setPage("history")}>研究记录</button>
           <a
-            className="nav-item muted-link"
             href="https://github.com/day0n/binance-agent-os"
             target="_blank"
             rel="noreferrer"
           >
-            <GitBranch size={17} />
-            开源代码
-            <ExternalLink size={12} />
+            开源代码 <ExternalLink size={12} />
           </a>
-          <div className="sidebar-foot">
-            <span className="avatar">R</span>
-            <div>
-              Research workspace<small>仅研究 · 无交易权限</small>
-            </div>
-            <ShieldCheck size={16} />
-          </div>
+        </nav>
+        <div className="header-actions">
+          <span className="independent-label">独立研究工具</span>
+          <button
+            className="primary-button connect-button"
+            disabled={busy || !bootstrap}
+            onClick={() =>
+              connected ? setSettings(true) : void connectBinance()
+            }
+          >
+            {busy ? (
+              <LoaderCircle size={16} className="spin" />
+            ) : (
+              <Link2 size={16} />
+            )}
+            {connected ? "已连接" : "连接币安"}
+          </button>
+          <button
+            className="icon-button desktop-action"
+            aria-label="研究记录"
+            data-tooltip="研究记录"
+            onClick={() => setPage("history")}
+          >
+            <Clock3 size={21} />
+          </button>
+          <button
+            className="icon-button"
+            aria-label="连接与偏好"
+            data-tooltip="连接与偏好"
+            onClick={() => setSettings(true)}
+          >
+            <Settings2 size={21} />
+          </button>
+          <button
+            className="icon-button desktop-action"
+            aria-label={theme === "dark" ? "切换浅色模式" : "切换深色模式"}
+            data-tooltip={theme === "dark" ? "浅色模式" : "深色模式"}
+            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          >
+            {theme === "dark" ? <Moon size={22} /> : <Sun size={22} />}
+          </button>
+          <button
+            className="icon-button mobile-menu"
+            aria-label="打开导航"
+            onClick={() => setMobileNav(true)}
+          >
+            <Menu size={23} />
+          </button>
         </div>
-      </aside>
-      <div className="workspace">
-        <header className="topbar">
-          <div className="breadcrumb">
+      </header>
+
+      <main id="main-content" className="workspace">
+        <nav className="page-tabs" aria-label="工作台页面">
+          {(
+            [
+              { id: "overview", name: "总览" },
+              { id: "history", name: "研究记录" },
+              { id: "help", name: "使用指南" },
+            ] as const
+          ).map((item) => (
             <button
-              className="icon-button mobile-menu"
-              aria-label="打开导航"
-              onClick={() => setMobileNav(true)}
+              key={item.id}
+              aria-current={page === item.id ? "page" : undefined}
+              className={page === item.id ? "active" : ""}
+              onClick={() => setPage(item.id)}
             >
-              <Menu size={20} />
+              {item.name}
             </button>
-            <Layers3 size={16} />
-            <span>工作空间</span>
-            <ChevronRight size={13} />
-            <strong>{selected.title}</strong>
-          </div>
-          <div className="header-actions">
-            <span className="readonly-badge">
-              <ShieldCheck size={13} />
-              只读研究
-            </span>
+          ))}
+        </nav>
+
+        {error && (
+          <div className="message-banner error-banner" role="alert">
+            <Info size={18} />
+            <span>{error}</span>
             <button
               className="icon-button"
-              title="连接与偏好"
-              aria-label="连接与偏好"
-              onClick={() => setSettings(true)}
+              aria-label="关闭错误"
+              onClick={() => setError(null)}
             >
-              <Settings2 size={17} />
+              <X size={18} />
             </button>
           </div>
-        </header>
-        <main>
-          <div className="workspace-heading">
-            <div className="eyebrow">
-              <span /> RESEARCH, WITH EVIDENCE
-            </div>
-            <div className="heading-line">
-              <h1>{selected.title}</h1>
-              <span className="version-label">WORKSPACE / 01</span>
-            </div>
-            <p>让不同观点相互检验，让每一个结论有据可查。</p>
+        )}
+        {notice && (
+          <div className="message-banner notice" role="status">
+            <CheckCircle2 size={18} />
+            <span>{notice}</span>
+            <button
+              className="icon-button"
+              aria-label="关闭提示"
+              onClick={() => setNotice(null)}
+            >
+              <X size={18} />
+            </button>
           </div>
-          {error && (
-            <div className="message-banner error" role="alert">
-              <Shield size={17} />
-              <span>{error}</span>
-              <button
-                className="icon-button"
-                aria-label="关闭错误"
-                onClick={() => setError(null)}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          )}
-          {notice && (
-            <div className="message-banner notice" role="status">
-              <CheckCircle2 size={17} />
-              <span>{notice}</span>
-              <button
-                className="icon-button"
-                aria-label="关闭提示"
-                onClick={() => setNotice(null)}
-              >
-                <X size={15} />
-              </button>
-            </div>
-          )}
-          <div className="desk-grid">
-            <section className="main-column">
-              {!run && !report && (
-                <div className="mode-cards">
-                  {modes.map((m) => (
-                    <button
-                      className={`mode-card ${mode === m.id ? "chosen" : ""}`}
-                      key={m.id}
-                      onClick={() => {
-                        setMode(m.id);
-                        setPrompt(m.prompt);
-                        requestId.current = null;
-                      }}
-                    >
-                      <div className="mode-card-top">
-                        <m.icon size={20} />
-                        <ArrowUpRight size={15} />
-                      </div>
-                      <h2>{m.title}</h2>
-                      <p>{m.description}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <section className="composer panel">
-                <div className="panel-heading">
+        )}
+
+        {page === "overview" && (
+          <>
+            <div className="overview-cards" aria-label="工作台状态">
+              <section className="overview-card">
+                <button
+                  className="card-title"
+                  onClick={() => setSettings(true)}
+                >
+                  <span>Binance MCP</span>
                   <span>
-                    <Search size={16} /> 研究任务
+                    管理 <ChevronRight size={14} />
                   </span>
-                  <span className="subtle">
-                    {bootstrap?.connection.connected
-                      ? "MCP 已连接"
-                      : "等待连接数据源"}
+                </button>
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon yellow">
+                      <Link2 size={14} />
+                    </span>
+                    数据来源
                   </span>
+                  <strong>官方 MCP</strong>
                 </div>
-                <div className="input-settings">
-                  <label>
-                    交易对
-                    <input
-                      aria-label="交易对"
-                      value={symbol}
-                      maxLength={19}
-                      onChange={(e) => {
-                        setSymbol(e.target.value.toUpperCase());
-                        requestId.current = null;
-                      }}
-                      disabled={running}
-                    />
-                  </label>
-                  <label>
-                    周期
-                    <select
-                      aria-label="K 线周期"
-                      value={interval}
-                      onChange={(e) => {
-                        setIntervalValue(e.target.value);
-                        requestId.current = null;
-                      }}
-                      disabled={running}
-                    >
-                      <option value="1d">日线 · 1D</option>
-                      <option value="4h">4 小时 · 4H</option>
-                      <option value="1h">1 小时 · 1H</option>
-                    </select>
-                  </label>
-                  <label>
-                    样本范围
-                    <select
-                      aria-label="样本范围"
-                      value={days}
-                      onChange={(e) => {
-                        setDays(Number(e.target.value));
-                        requestId.current = null;
-                      }}
-                      disabled={running}
-                    >
-                      <option value={90}>最近 90 天</option>
-                      <option value={180}>最近 180 天</option>
-                      <option value={365}>最近 365 天</option>
-                    </select>
-                  </label>
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon muted">
+                      <Activity size={14} />
+                    </span>
+                    连接状态
+                  </span>
+                  <strong className={connected ? "positive" : "subtle"}>
+                    {!bootstrap ? (
+                      <span className="skeleton" />
+                    ) : connected ? (
+                      "已连接"
+                    ) : (
+                      "待授权"
+                    )}
+                  </strong>
                 </div>
-                {mode === "portfolio" && (
-                  <div className="inline-note">
-                    账户体检覆盖所有已授权现货资产；交易对设置不限制账户范围。
-                  </div>
-                )}
-                {mode === "backtest" && (
-                  <div className="backtest-controls">
-                    <label>
-                      策略
-                      <select
-                        aria-label="回测策略"
-                        value={strategy}
-                        onChange={(e) => {
-                          setStrategy(e.target.value);
-                          requestId.current = null;
-                        }}
-                        disabled={running}
-                      >
-                        <option value="sma_cross">均线交叉 · 10 / 30</option>
-                        <option value="rsi_reversion">RSI 均值回归 · 14</option>
-                        <option value="buy_hold">买入持有</option>
-                      </select>
-                    </label>
-                    <label>
-                      手续费 / 边
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={fees}
-                        aria-label="手续费 bps"
-                        onChange={(e) => {
-                          setFees(Number(e.target.value));
-                          requestId.current = null;
-                        }}
-                        disabled={running}
-                      />
-                      <small>bps，模拟假设</small>
-                    </label>
-                    <label>
-                      滑点 / 边
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={slippage}
-                        aria-label="滑点 bps"
-                        onChange={(e) => {
-                          setSlippage(Number(e.target.value));
-                          requestId.current = null;
-                        }}
-                        disabled={running}
-                      />
-                      <small>bps，模拟假设</small>
-                    </label>
-                  </div>
-                )}
-                <textarea
-                  aria-label="研究问题"
-                  value={prompt}
-                  onChange={(e) => {
-                    setPrompt(e.target.value);
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon muted">
+                      <ShieldCheck size={14} />
+                    </span>
+                    访问权限
+                  </span>
+                  <strong>仅只读</strong>
+                </div>
+              </section>
+              <section className="overview-card">
+                <button
+                  className="card-title"
+                  onClick={() => setSettings(true)}
+                >
+                  <span>模型服务</span>
+                  <span>
+                    设置 <ChevronRight size={14} />
+                  </span>
+                </button>
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon violet">✦</span>Gemini
+                  </span>
+                  <strong>
+                    {bootstrap?.providers
+                      .find((p) => p.id === "gemini")
+                      ?.model.replace("gemini-", "")
+                      .replace("-flash", " Flash") ?? (
+                      <span className="skeleton" />
+                    )}
+                  </strong>
+                </div>
+                <div className="overview-row">
+                  <span>思考强度</span>
+                  <strong className="accent">
+                    HIGH <span className="small-label">最高档位</span>
+                  </strong>
+                </div>
+                <div className="overview-row">
+                  <span>调用方式</span>
+                  <strong>Vertex AI</strong>
+                </div>
+              </section>
+              <section className="overview-card">
+                <button
+                  className="card-title"
+                  onClick={() => setSettings(true)}
+                >
+                  <span>风险与权限</span>
+                  <span>
+                    查看 <ChevronRight size={14} />
+                  </span>
+                </button>
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon green">
+                      <Wallet size={14} />
+                    </span>
+                    账户范围
+                  </span>
+                  <strong>仅现货</strong>
+                </div>
+                <div className="overview-row">
+                  <span>实盘交易</span>
+                  <strong className="subtle">未开放</strong>
+                </div>
+                <div className="overview-row">
+                  <span>风险限额</span>
+                  <strong className={policyEnabled ? "accent" : ""}>
+                    {policyEnabled ? "已设置" : "自主设置"}
+                  </strong>
+                </div>
+              </section>
+              <section className="overview-card">
+                <button
+                  className="card-title"
+                  onClick={() => setPage("history")}
+                >
+                  <span>最近研究</span>
+                  <span>
+                    更多 <ChevronRight size={14} />
+                  </span>
+                </button>
+                <div className="overview-row">
+                  <span>
+                    <span className="mini-icon blue">
+                      <FileText size={14} />
+                    </span>
+                    最近记录
+                  </span>
+                  <strong className="numeric">
+                    {historyLoaded ? history.length : "—"}
+                  </strong>
+                </div>
+                <div className="overview-row">
+                  <span>已完成</span>
+                  <strong className="numeric">
+                    {historyLoaded
+                      ? history.filter((h) => h.status === "completed").length
+                      : "—"}
+                  </strong>
+                </div>
+                <div className="overview-row">
+                  <span>进行中</span>
+                  <strong className="numeric">
+                    {historyLoaded
+                      ? history.filter((h) =>
+                          ["running", "queued"].includes(h.status),
+                        ).length
+                      : "—"}
+                  </strong>
+                </div>
+              </section>
+            </div>
+
+            <div className="market-toolbar">
+              {taskTabs()}
+              <button className="text-button" onClick={newResearch}>
+                <Plus size={17} />
+                新建研究
+              </button>
+            </div>
+            <div className="asset-filters" aria-label="快捷选择交易对">
+              <span className="filter-label">交易对</span>
+              {["BTC", "ETH", "BNB", "SOL"].map((asset) => (
+                <button
+                  key={asset}
+                  aria-pressed={symbol === asset + "USDT"}
+                  className={
+                    "filter-chip" +
+                    (symbol === asset + "USDT" ? " selected" : "")
+                  }
+                  disabled={running}
+                  onClick={() => {
+                    setSymbol(asset + "USDT");
                     requestId.current = null;
                   }}
-                  maxLength={4000}
-                  placeholder={selected.prompt}
-                  disabled={running}
-                />
-                <div className="composer-bottom">
-                  <label className="model-select">
-                    <span className="model-symbol">✳</span>
-                    <select
-                      aria-label="模型提供商"
-                      value={provider}
-                      disabled={running}
-                      onChange={(e) => {
-                        setProvider(e.target.value as Provider);
-                        requestId.current = null;
-                      }}
-                    >
-                      <option value="gemini">Gemini · HIGH</option>
-                      <option
-                        value="openai"
-                        disabled={
-                          !bootstrap?.providers.find((p) => p.id === "openai")
-                            ?.available
-                        }
-                      >
-                        OpenAI
-                      </option>
-                      <option
-                        value="anthropic"
-                        disabled={
-                          !bootstrap?.providers.find(
-                            (p) => p.id === "anthropic",
-                          )?.available
-                        }
-                      >
-                        Anthropic
-                      </option>
-                    </select>
-                    <ChevronDown size={13} />
-                  </label>
-                  <div className="composer-actions">
-                    <span className="subtle desktop-only">
-                      {prompt.length}/4000
-                    </span>
-                    {running ? (
-                      <button
-                        className="secondary-button"
-                        onClick={() => void cancel()}
-                      >
-                        <Square size={12} />
-                        停止研究
-                      </button>
-                    ) : (
-                      <button
-                        className="primary-button"
-                        onClick={() => void submit()}
-                        disabled={
-                          busy ||
-                          !bootstrap?.connection.connected ||
-                          prompt.trim().length < 2 ||
-                          !bootstrap.providers.find((p) => p.id === provider)
-                            ?.available
-                        }
-                      >
-                        {busy ? (
-                          <LoaderCircle size={16} className="spin" />
-                        ) : (
-                          <ArrowRight size={16} />
-                        )}
-                        开始研究
-                      </button>
-                    )}
-                  </div>
-                </div>
-                {!bootstrap?.connection.connected ? (
-                  <div className="composer-note">
-                    <Link2 size={13} />
-                    <span>
-                      首次使用需完成币安 OAuth 授权。模型不会接触你的连接凭据。
-                    </span>
-                  </div>
-                ) : !capabilitiesReady ? (
-                  <div className="composer-note warning">
-                    <Shield size={13} />
-                    <span>
-                      当前能力尚待工具目录审核；调用会明确报错，不会使用模拟数据。
-                    </span>
-                  </div>
-                ) : (
-                  <div className="composer-note">
-                    <ShieldCheck size={13} />
-                    <span>
-                      只读工具已配置。所有结论都将附带来源与数据时间。
-                    </span>
-                  </div>
-                )}
-              </section>
-              {run && (
-                <section className="run-summary panel">
-                  <span className={`run-status ${run.status}`}>
-                    {running && <LoaderCircle size={14} className="spin" />}
-                    {statusNames[run.status]}
-                  </span>
-                  <span className="mono">{run.id.slice(0, 8)}</span>
-                  <span>{run.modelCalls} 次模型调用</span>
-                  <span>{run.toolCalls} 次工具调用</span>
-                  <span>{number(run.tokens)} tokens</span>
-                </section>
-              )}
-              {report ? (
-                <Report
-                  report={report}
-                  onEvidence={() => setShowEvidence(true)}
-                  onDownload={downloadReport}
-                />
-              ) : (
-                <section className="results-empty panel">
-                  <div className="results-top">
-                    <span>
-                      <FileText size={16} />
-                      研究产物
-                    </span>
-                    <span className="tiny-tag">可追溯</span>
-                  </div>
-                  <div className="empty-results-content">
-                    <div className="document-icon">
-                      <FileText size={31} strokeWidth={1.1} />
-                      <span>
-                        <Check size={11} />
+                >
+                  {asset}
+                  <span>/ USDT</span>
+                </button>
+              ))}
+              <span className="readonly-label">
+                <ShieldCheck size={14} />
+                仅分析，不执行交易
+              </span>
+            </div>
+            <section
+              id="research-workspace"
+              role="tabpanel"
+              aria-labelledby={"tab-" + mode}
+            >
+              <div className="workspace-heading">
+                <h1>{selected.title}</h1>
+                <p>
+                  {selected.description}。基于真实数据，交叉验证观点与风险。
+                </p>
+              </div>
+              <div className="desk-grid">
+                <div className="main-column">
+                  <section className="composer panel" aria-label="创建研究任务">
+                    <div className="panel-heading">
+                      <h2>
+                        <Search size={18} />
+                        创建研究
+                      </h2>
+                      <span className="connection-state">
+                        <i
+                          className={
+                            connected ? "status-dot online" : "status-dot"
+                          }
+                        />
+                        {connected ? "数据源已连接" : "等待连接数据源"}
                       </span>
                     </div>
-                    <h3>
-                      {running ? "研究正在进行" : "你的下一份研究，从这里开始"}
-                    </h3>
-                    <p>
-                      {running
-                        ? "分析节点正在工作。可以刷新页面，运行状态和已保存事件不会丢失。"
-                        : "完成研究后，在这里查看结论、分歧、风险与原始证据。这里不会预填虚构的市场数据。"}
-                    </p>
-                    {!running && (
-                      <button
-                        className="text-button"
-                        onClick={() => {
-                          setPrompt(selected.prompt);
+                    <div className="input-settings">
+                      <div className="field">
+                        <label htmlFor="pair">交易对</label>
+                        <div className="input-with-icon">
+                          <Search size={16} />
+                          <input
+                            id="pair"
+                            aria-label="交易对"
+                            value={symbol}
+                            maxLength={19}
+                            spellCheck={false}
+                            autoComplete="off"
+                            onChange={(e) => {
+                              setSymbol(e.target.value.toUpperCase());
+                              requestId.current = null;
+                            }}
+                            disabled={running}
+                          />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <span className="field-label">K 线周期</span>
+                        <Select
+                          label="K 线周期"
+                          value={interval}
+                          disabled={running}
+                          options={[
+                            { value: "1d", label: "1 天" },
+                            { value: "4h", label: "4 小时" },
+                            { value: "1h", label: "1 小时" },
+                          ]}
+                          onChange={(value) => {
+                            setIntervalValue(value);
+                            requestId.current = null;
+                          }}
+                        />
+                      </div>
+                      <div className="field">
+                        <span className="field-label">样本范围</span>
+                        <Select
+                          label="样本范围"
+                          value={String(days)}
+                          disabled={running}
+                          options={[
+                            { value: "90", label: "最近 90 天" },
+                            { value: "180", label: "最近 180 天" },
+                            { value: "365", label: "最近 365 天" },
+                          ]}
+                          onChange={(value) => {
+                            setDays(Number(value));
+                            requestId.current = null;
+                          }}
+                        />
+                      </div>
+                    </div>
+                    {mode === "portfolio" && (
+                      <div className="inline-note">
+                        <Info size={15} />
+                        覆盖全部已授权现货资产，交易对设置不限制账户范围。
+                      </div>
+                    )}
+                    {mode === "backtest" && (
+                      <div className="backtest-controls">
+                        <div className="field">
+                          <span className="field-label">回测策略</span>
+                          <Select
+                            label="回测策略"
+                            value={strategy}
+                            disabled={running}
+                            options={[
+                              {
+                                value: "sma_cross",
+                                label: "均线交叉 · 10 / 30",
+                              },
+                              {
+                                value: "rsi_reversion",
+                                label: "RSI 均值回归 · 14",
+                              },
+                              { value: "buy_hold", label: "买入持有" },
+                            ]}
+                            onChange={(value) => {
+                              setStrategy(value);
+                              requestId.current = null;
+                            }}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="fees">
+                            手续费 / 边 <span className="subtle">(bps)</span>
+                          </label>
+                          <input
+                            id="fees"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={fees}
+                            aria-label="手续费 bps"
+                            onChange={(e) => {
+                              setFees(Number(e.target.value));
+                              requestId.current = null;
+                            }}
+                            disabled={running}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="slippage">
+                            滑点 / 边 <span className="subtle">(bps)</span>
+                          </label>
+                          <input
+                            id="slippage"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={slippage}
+                            aria-label="滑点 bps"
+                            onChange={(e) => {
+                              setSlippage(Number(e.target.value));
+                              requestId.current = null;
+                            }}
+                            disabled={running}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    <div className="question-field">
+                      <div className="question-label">
+                        <label htmlFor="research-question">研究问题</label>
+                        <button
+                          className="text-button"
+                          onClick={useExample}
+                          disabled={running}
+                        >
+                          使用示例 <ChevronRight size={14} />
+                        </button>
+                      </div>
+                      <textarea
+                        id="research-question"
+                        aria-label="研究问题"
+                        value={prompt}
+                        maxLength={4000}
+                        placeholder={selected.prompt.replace(
+                          "BTC",
+                          symbol.replace(/USDT$/, ""),
+                        )}
+                        disabled={running}
+                        onChange={(e) => {
+                          setPrompt(e.target.value);
                           requestId.current = null;
                         }}
+                        onKeyDown={(e) => {
+                          if (
+                            (e.metaKey || e.ctrlKey) &&
+                            e.key === "Enter" &&
+                            canSubmit &&
+                            !running
+                          ) {
+                            e.preventDefault();
+                            void submit();
+                          }
+                        }}
+                      />
+                      <span className="character-count">
+                        {prompt.length} / 4000
+                      </span>
+                    </div>
+                    <div className="composer-bottom">
+                      <div className="model-select">
+                        <span className="model-symbol">✦</span>
+                        <Select
+                          label="模型提供商"
+                          compact
+                          value={provider}
+                          disabled={running}
+                          options={[
+                            {
+                              value: "gemini",
+                              label: "Gemini · HIGH",
+                              disabled: !bootstrap?.providers.find(
+                                (p) => p.id === "gemini",
+                              )?.available,
+                            },
+                            {
+                              value: "openai",
+                              label: "OpenAI",
+                              disabled: !bootstrap?.providers.find(
+                                (p) => p.id === "openai",
+                              )?.available,
+                            },
+                            {
+                              value: "anthropic",
+                              label: "Anthropic",
+                              disabled: !bootstrap?.providers.find(
+                                (p) => p.id === "anthropic",
+                              )?.available,
+                            },
+                          ]}
+                          onChange={(value) => {
+                            setProvider(value as Provider);
+                            requestId.current = null;
+                          }}
+                        />
+                      </div>
+                      {running ? (
+                        <button
+                          className="secondary-button"
+                          onClick={() => void cancel()}
+                        >
+                          <Square size={13} />
+                          停止研究
+                        </button>
+                      ) : (
+                        <button
+                          className="primary-button start-button"
+                          disabled={!canSubmit}
+                          onClick={() => void submit()}
+                        >
+                          {busy && <LoaderCircle size={16} className="spin" />}
+                          开始研究
+                          <ArrowRight size={17} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="composer-note">
+                      <ShieldCheck size={14} />
+                      <span>
+                        {!connected
+                          ? "完成币安 OAuth 授权后开始使用。凭据仅保存在服务端。"
+                          : !capabilitiesReady
+                            ? "只读工具尚待审核；未配置时明确报错，不使用模拟行情。"
+                            : "只读工具已配置。研究结果将附带数据来源与时间。"}
+                      </span>
+                      {!connected && (
+                        <button
+                          className="text-button"
+                          disabled={busy || !bootstrap}
+                          onClick={() => void connectBinance()}
+                        >
+                          去连接
+                          <ChevronRight size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </section>
+                  {run && (
+                    <section
+                      className="run-summary panel"
+                      aria-label="当前任务"
+                    >
+                      <span className={"run-status " + run.status}>
+                        {running && <LoaderCircle size={14} className="spin" />}
+                        {statusNames[run.status]}
+                      </span>
+                      <span className="mono">{run.id.slice(0, 8)}</span>
+                      <span>{run.modelCalls} 次模型调用</span>
+                      <span>{run.toolCalls} 次工具调用</span>
+                      <span>{number(run.tokens)} tokens</span>
+                    </section>
+                  )}
+                  <section className="output-section">
+                    <div className="output-toolbar">
+                      <div className="output-tabs">
+                        <button
+                          aria-pressed={outputTab === "report"}
+                          className={outputTab === "report" ? "active" : ""}
+                          onClick={() => setOutputTab("report")}
+                        >
+                          研究报告
+                        </button>
+                        <button
+                          aria-pressed={outputTab === "events"}
+                          className={outputTab === "events" ? "active" : ""}
+                          onClick={() => setOutputTab("events")}
+                        >
+                          执行记录<span>{events.length}</span>
+                        </button>
+                        <button
+                          onClick={() => setShowEvidence(true)}
+                          disabled={!report}
+                        >
+                          证据索引
+                        </button>
+                      </div>
+                      <button
+                        className="icon-button"
+                        aria-label="下载研究报告"
+                        disabled={!report}
+                        onClick={downloadReport}
                       >
-                        使用示例问题 <ArrowRight size={14} />
+                        <ArrowDownToLine size={19} />
                       </button>
-                    )}
-                  </div>
-                  <div className="trust-strip">
-                    <span>
-                      <Link2 size={13} />
-                      真实数据
-                    </span>
-                    <span>
-                      <GitBranch size={13} />
-                      多视角复核
-                    </span>
-                    <span>
-                      <ShieldCheck size={13} />
-                      独立风控
-                    </span>
-                  </div>
-                </section>
-              )}
-            </section>
-            <aside className="inspector">
-              <section className="panel pipeline">
-                <div className="panel-heading">
-                  <span>
-                    <GitBranch size={16} />
-                    Agent 协作
-                  </span>
-                  <span className="tiny-tag">{roles.length} 节点</span>
-                </div>
-                <p className="panel-description">专业分工，共享同一份证据。</p>
-                <div className="pipeline-list">
-                  {roles.map((role, index) => {
-                    const done = events.some(
-                      (e) => e.type === "agent.completed" && e.role === role,
-                    );
-                    const active =
-                      !done &&
-                      events.some(
-                        (e) => e.type === "agent.started" && e.role === role,
-                      );
-                    return (
-                      <div
-                        className={`pipeline-node ${done ? "done" : ""} ${active ? "in-progress" : ""}`}
-                        key={role}
-                      >
-                        <div className="node-indicator">
-                          {done ? (
-                            <Check size={12} />
-                          ) : active && running ? (
-                            <LoaderCircle size={12} className="spin" />
-                          ) : (
-                            <span>{String(index + 1).padStart(2, "0")}</span>
+                    </div>
+                    {outputTab === "report" ? (
+                      report ? (
+                        <Report
+                          report={report}
+                          onEvidence={() => setShowEvidence(true)}
+                          onDownload={downloadReport}
+                        />
+                      ) : (
+                        <div className="results-empty">
+                          <div
+                            className={
+                              "empty-illustration" +
+                              (running ? " is-working" : "")
+                            }
+                          >
+                            <FileText size={42} strokeWidth={1.35} />
+                            <span>
+                              {running ? (
+                                <LoaderCircle size={16} className="spin" />
+                              ) : (
+                                <Search size={16} />
+                              )}
+                            </span>
+                          </div>
+                          <h3>{running ? "研究正在进行" : "暂无研究报告"}</h3>
+                          <p>
+                            {running
+                              ? "Agent 正在分析数据。执行记录会持续更新，已保存的任务可从研究记录中继续查看。"
+                              : "选择交易对并提出问题，获取有依据、可追溯的研究报告。"}
+                          </p>
+                          {!running && (
+                            <button
+                              className="text-button"
+                              onClick={useExample}
+                            >
+                              从示例问题开始
+                              <ArrowRight size={15} />
+                            </button>
                           )}
                         </div>
-                        <div>
-                          <strong>{roleNames[role]}</strong>
-                          <small>
-                            {
-                              {
-                                supervisor: "任务与边界",
-                                market: "趋势 · 波动 · 量价",
-                                portfolio: "估值 · 集中度 · 敞口",
-                                strategy: "策略 · 基准 · 假设",
-                                bull: "支持论点与失效条件",
-                                bear: "反证与未覆盖风险",
-                                risk: "确定性约束检查",
-                                report: "综合结论与证据",
-                              }[role]
-                            }
-                          </small>
-                        </div>
-                        {done ? (
-                          <span className="node-label">完成</span>
-                        ) : active && running ? (
-                          <span className="node-label">运行中</span>
-                        ) : null}
+                      )
+                    ) : (
+                      <div className="event-table table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>时间</th>
+                              <th>执行节点</th>
+                              <th>状态与说明</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {events.length ? (
+                              events.map((e) => (
+                                <tr key={e.id}>
+                                  <td className="numeric">{date(e.at)}</td>
+                                  <td>{e.role ? roleNames[e.role] : "系统"}</td>
+                                  <td>{e.message}</td>
+                                </tr>
+                              ))
+                            ) : (
+                              <tr>
+                                <td colSpan={3}>
+                                  <div className="table-empty">
+                                    <Clock3 size={32} />
+                                    <p>暂无执行记录</p>
+                                    <span>
+                                      启动研究后，节点状态和工具摘要将在这里更新。
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
                       </div>
-                    );
-                  })}
+                    )}
+                  </section>
                 </div>
-              </section>
-              <section className="panel evidence-summary">
-                <div className="panel-heading">
-                  <span>
-                    <BookOpen size={16} />
-                    证据索引
-                  </span>
-                  <span className="mono">
-                    {String(report?.evidence.length ?? 0).padStart(2, "0")}
-                  </span>
-                </div>
-                {report ? (
-                  <>
+                <aside className="inspector" aria-label="研究协作与证据">
+                  <section className="panel pipeline">
+                    <div className="panel-heading">
+                      <h2>Agent 协作</h2>
+                      <span className="subtle">{roles.length} 个节点</span>
+                    </div>
+                    <p className="panel-description">
+                      独立分工，共享同一份证据
+                    </p>
+                    <ol className="pipeline-list">
+                      {roles.map((role, index) => {
+                        const done = events.some(
+                          (e) =>
+                            e.type === "agent.completed" && e.role === role,
+                        );
+                        const active =
+                          !done &&
+                          events.some(
+                            (e) =>
+                              e.type === "agent.started" && e.role === role,
+                          );
+                        return (
+                          <li
+                            className={
+                              "pipeline-node" +
+                              (done ? " done" : "") +
+                              (active && running ? " in-progress" : "")
+                            }
+                            key={role}
+                          >
+                            <div className="node-indicator">
+                              {done ? (
+                                <Check size={13} />
+                              ) : active && running ? (
+                                <LoaderCircle size={13} className="spin" />
+                              ) : (
+                                index + 1
+                              )}
+                            </div>
+                            <div>
+                              <strong>{roleNames[role]}</strong>
+                              <small>
+                                {
+                                  {
+                                    supervisor: "任务规划与边界",
+                                    market: "趋势、波动与量价",
+                                    portfolio: "估值、集中度与敞口",
+                                    strategy: "策略、基准与假设",
+                                    bull: "支持观点与适用条件",
+                                    bear: "反证与未覆盖风险",
+                                    risk: "确定性风控检查",
+                                    report: "综合结论与证据",
+                                  }[role]
+                                }
+                              </small>
+                            </div>
+                            {done ? (
+                              <span className="node-label">完成</span>
+                            ) : active && running ? (
+                              <span className="node-label">进行中</span>
+                            ) : null}
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </section>
+                  <section className="panel evidence-summary">
+                    <div className="panel-heading">
+                      <h2>
+                        <BookOpen size={17} />
+                        证据索引
+                      </h2>
+                      <span className="numeric subtle">
+                        {report?.evidence.length ?? 0}
+                      </span>
+                    </div>
                     <p>
-                      {
-                        report.evidence.filter(
-                          (e) => e.source === "binance_mcp",
-                        ).length
-                      }{" "}
-                      份官方来源 ·{" "}
-                      {
-                        report.evidence.filter(
-                          (e) => e.source === "calculation",
-                        ).length
-                      }{" "}
-                      份计算产物
+                      {report
+                        ? report.evidence.filter(
+                            (e) => e.source === "binance_mcp",
+                          ).length +
+                          " 份官方来源 · " +
+                          report.evidence.filter(
+                            (e) => e.source === "calculation",
+                          ).length +
+                          " 份计算产物"
+                        : "每份数据保留来源、获取时间与内容哈希，让结论可以核验。"}
                     </p>
                     <button
                       className="text-button"
+                      disabled={!report}
                       onClick={() => setShowEvidence(true)}
                     >
-                      检查来源与哈希 <ArrowUpRight size={13} />
+                      查看全部证据
+                      <ChevronRight size={14} />
                     </button>
-                  </>
-                ) : (
-                  <p>每份行情和计算结果都有独立标识、获取时间与内容哈希。</p>
-                )}
-              </section>
-              <section className="activity-section">
-                <div className="activity-heading">
-                  <Activity size={14} />
-                  <span>执行动态</span>
-                  {running && <i className="pulse-dot" />}
-                </div>
-                {events.length ? (
-                  <div className="event-list">
-                    {events
-                      .slice(-8)
-                      .reverse()
-                      .map((e) => (
-                        <div className="event" key={e.id}>
-                          <span className="event-dot" />
-                          <p>
-                            {e.message}
-                            <time>{date(e.at)}</time>
-                          </p>
-                        </div>
-                      ))}
+                  </section>
+                  <div className="safety-note">
+                    <Shield size={17} />
+                    <p>
+                      只研究，不交易。
+                      <br />
+                      研究观点不构成投资建议。
+                    </p>
                   </div>
-                ) : (
-                  <div className="activity-empty">
-                    <Circle size={6} />
-                    暂无执行记录
-                  </div>
-                )}
-              </section>
-              <div className="safety-note">
-                <Shield size={15} />
-                <p>
-                  这个工作台不下单、不转账。
-                  <br />
-                  研究观点不构成投资建议。
-                </p>
+                </aside>
               </div>
-            </aside>
-          </div>
-          <footer className="workspace-footer">
-            <span>BUILT FOR CLARITY, NOT CERTAINTY.</span>
-            <span>Independent project · Binance Agent OS track 1</span>
-          </footer>
-        </main>
-      </div>
-      {settings && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setSettings(false);
-          }}
-        >
-          <section
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="settings-title"
-          >
-            <div className="modal-heading">
-              <h2 id="settings-title">连接与偏好</h2>
-              <button
-                className="icon-button"
-                aria-label="关闭设置"
-                onClick={() => setSettings(false)}
-              >
-                <X size={20} />
+            </section>
+          </>
+        )}
+
+        {page === "history" && (
+          <section className="history-page page-section">
+            <div className="section-title">
+              <div>
+                <h1>研究记录</h1>
+                <p>每一次分析，都有完整的执行过程与证据。</p>
+              </div>
+              <button className="primary-button" onClick={newResearch}>
+                <Plus size={17} />
+                新建研究
               </button>
             </div>
-            <div className="settings-block">
-              <h3>Binance 官方 MCP</h3>
-              <p>
-                OAuth 凭据仅加密保存在服务端。首次授权和币安侧撤权由你本人完成。
-              </p>
-              <div className="settings-actions">
-                <button
-                  className="primary-button"
-                  disabled={busy}
-                  onClick={() => void connectBinance()}
-                >
-                  <Link2 size={15} />
-                  {bootstrap?.connection.connected ? "重新授权" : "连接币安"}
-                </button>
-                {bootstrap?.connection.connected && (
-                  <>
-                    <button
-                      className="secondary-button"
-                      disabled={busy}
-                      onClick={() => void inspectTools()}
-                    >
-                      检查工具目录
-                    </button>
-                    <button
-                      className="icon-button"
-                      aria-label="断开币安连接"
-                      onClick={() => {
-                        void api("/api/auth/binance/disconnect", {})
-                          .then(() => refreshBootstrap())
-                          .then(() =>
-                            setNotice(
-                              "应用内连接已断开；币安侧撤权请在币安授权管理中完成。",
-                            ),
-                          )
-                          .catch((e) => setError(e.message));
-                      }}
-                    >
-                      <Unplug size={17} />
-                    </button>
-                  </>
-                )}
+            <div className="history-toolbar">
+              <div className="status-filters">
+                {[
+                  { id: "all", name: "全部" },
+                  { id: "running", name: "进行中" },
+                  { id: "completed", name: "已完成" },
+                  { id: "failed", name: "未完成" },
+                  { id: "cancelled", name: "已取消" },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    className={
+                      "filter-chip" +
+                      (historyFilter === f.id ? " selected" : "")
+                    }
+                    aria-pressed={historyFilter === f.id}
+                    onClick={() => setHistoryFilter(f.id)}
+                  >
+                    {f.name}
+                  </button>
+                ))}
               </div>
-              {catalog && (
-                <details className="catalog">
-                  <summary>{catalog.length} 个工具 · 原始 Schema</summary>
-                  <pre>{JSON.stringify(catalog, null, 2)}</pre>
+              <div className="input-with-icon history-search">
+                <Search size={18} />
+                <input
+                  aria-label="搜索研究记录"
+                  value={historyQuery}
+                  onChange={(e) => setHistoryQuery(e.target.value)}
+                  placeholder="搜索交易对或研究问题"
+                />
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="history-table">
+                <thead>
+                  <tr>
+                    <th>研究任务</th>
+                    <th>交易对</th>
+                    <th>类型</th>
+                    <th>状态</th>
+                    <th>创建时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleHistory.length ? (
+                    visibleHistory.map((item) => (
+                      <tr key={item._id}>
+                        <td>
+                          <button
+                            className="history-title"
+                            onClick={() => void openRun(item)}
+                          >
+                            <FileText size={18} />
+                            <span>{item.input.prompt}</span>
+                          </button>
+                        </td>
+                        <td className="numeric">{item.input.symbol}</td>
+                        <td>
+                          {modes.find((m) => m.id === item.input.mode)?.title}
+                        </td>
+                        <td>
+                          <span className={"run-status " + item.status}>
+                            {statusNames[item.status]}
+                          </span>
+                        </td>
+                        <td className="numeric">{date(item.createdAt)}</td>
+                        <td>
+                          <button
+                            className="text-button"
+                            onClick={() => void openRun(item)}
+                          >
+                            查看
+                            <ChevronRight size={14} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={6}>
+                        <div className="table-empty">
+                          <FileText size={38} strokeWidth={1.3} />
+                          <h3>
+                            {!historyLoaded
+                              ? error
+                                ? "暂时无法加载记录"
+                                : "正在加载研究记录"
+                              : historyQuery || historyFilter !== "all"
+                                ? "未找到匹配的研究"
+                                : "暂无研究记录"}
+                          </h3>
+                          <p>
+                            {!historyLoaded
+                              ? error
+                                ? "请检查上方错误提示后重试。"
+                                : "正在读取当前会话的研究历史。"
+                              : historyQuery || historyFilter !== "all"
+                                ? "尝试其他关键词或筛选条件。"
+                                : "完成研究后，可以在这里回看报告与执行过程。"}
+                          </p>
+                          <button className="text-button" onClick={newResearch}>
+                            开始第一份研究
+                            <ArrowRight size={15} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <p className="table-note">
+              显示当前浏览器会话最近 50 条记录。切换页面不会取消后台任务。
+            </p>
+          </section>
+        )}
+
+        {page === "help" && (
+          <section className="help-page page-section">
+            <div className="section-title">
+              <div>
+                <h1>开始你的第一份研究</h1>
+                <p>连接真实数据，用证据检验每一个观点。</p>
+              </div>
+            </div>
+            <div className="guide-steps">
+              {[
+                {
+                  title: "连接币安",
+                  icon: Link2,
+                  body: "由你本人完成官方 OAuth 授权。连接凭据加密存放在服务端，不进入模型上下文。",
+                },
+                {
+                  title: "提出研究问题",
+                  icon: Search,
+                  body: "选择市场研究、现货体检或策略回测，设定交易对、时间范围和明确的问题。",
+                },
+                {
+                  title: "核验报告与证据",
+                  icon: FileText,
+                  body: "查看分析结论、不同观点和风险约束，追溯原始数据与计算结果。",
+                },
+              ].map((s, i) => (
+                <section className="panel guide-step" key={s.title}>
+                  <span className="step-number">0{i + 1}</span>
+                  <s.icon size={30} />
+                  <h2>{s.title}</h2>
+                  <p>{s.body}</p>
+                </section>
+              ))}
+            </div>
+            <h2 className="faq-title">常见问题</h2>
+            <div className="faq-list">
+              {[
+                [
+                  "工作台会自动下单吗？",
+                  "不会。服务端只允许经过审核的读取工具，不提供交易、转账、借贷或提现功能。",
+                ],
+                [
+                  "为什么连接后仍可能无法开始研究？",
+                  "数据连接、模型和已审核工具都必须可用。依赖异常或工具尚未配置会明确报错，不会拿模拟行情代替。",
+                ],
+                [
+                  "回测中的费用和滑点是什么？",
+                  "两者是你指定的模拟假设，以基点（bps）计算，1 bps = 0.01%。信号形成后才在下一根 K 线开盘模拟成交，历史收益不代表未来表现。",
+                ],
+                [
+                  "如何设置风险限额？",
+                  "打开右上角“连接与偏好”，显式启用下一次任务的风险限额。未设置时只输出分析，不生成具体仓位调整数量。",
+                ],
+                [
+                  "这是币安官方产品吗？",
+                  "不是。这是面向 Binance Agent OS 赛道一的独立开源项目，使用官方 MCP 作为数据接口，不代表币安官方。",
+                ],
+              ].map(([q, a]) => (
+                <details key={q}>
+                  <summary>
+                    {q}
+                    <Plus size={20} />
+                  </summary>
+                  <p>{a}</p>
                 </details>
+              ))}
+            </div>
+            <div className="guide-actions">
+              <button className="primary-button" onClick={newResearch}>
+                进入研究工作台
+                <ArrowRight size={16} />
+              </button>
+              <a
+                className="text-button"
+                href="https://github.com/day0n/binance-agent-os"
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看开源文档
+                <ExternalLink size={14} />
+              </a>
+            </div>
+          </section>
+        )}
+
+        <footer className="workspace-footer">
+          <span>
+            <ShieldCheck size={14} />
+            独立项目 · 非币安官方产品
+          </span>
+          <span>Binance Agent OS · 仅研究，不执行交易</span>
+        </footer>
+      </main>
+
+      <button
+        className="support-button"
+        aria-label="打开使用指南"
+        data-tooltip="使用指南"
+        onClick={() => {
+          setPage("help");
+          window.scrollTo({
+            top: 0,
+            behavior: window.matchMedia("(prefers-reduced-motion: reduce)")
+              .matches
+              ? "instant"
+              : "smooth",
+          });
+        }}
+      >
+        <Headphones size={25} strokeWidth={2.4} />
+      </button>
+
+      {mobileNav && (
+        <Dialog title="导航" drawer onClose={() => setMobileNav(false)}>
+          <nav className="mobile-navigation" aria-label="移动端导航">
+            {modes.map((m) => (
+              <button key={m.id} onClick={() => selectMode(m.id)}>
+                <m.icon size={20} />
+                {m.title}
+                <ChevronRight size={16} />
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setPage("history");
+                setMobileNav(false);
+              }}
+            >
+              <Clock3 size={20} />
+              研究记录
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={() => {
+                setPage("help");
+                setMobileNav(false);
+              }}
+            >
+              <Info size={20} />
+              使用指南
+              <ChevronRight size={16} />
+            </button>
+            <button
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}切换
+              {theme === "dark" ? "浅色" : "深色"}模式
+            </button>
+            <a
+              href="https://github.com/day0n/binance-agent-os"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <GitBranch size={20} />
+              开源代码
+              <ExternalLink size={15} />
+            </a>
+          </nav>
+          <p className="mobile-disclaimer">独立研究工具 · 非币安官方产品</p>
+        </Dialog>
+      )}
+
+      {settings && (
+        <Dialog title="连接与偏好" onClose={() => setSettings(false)}>
+          {error && (
+            <div className="message-banner error-banner" role="alert">
+              <Info size={17} />
+              <span>{error}</span>
+            </div>
+          )}
+          <section className="settings-block">
+            <div className="settings-title">
+              <h3>Binance 官方 MCP</h3>
+              <span className={"status-tag" + (connected ? " connected" : "")}>
+                {connected ? "已连接" : "未连接"}
+              </span>
+            </div>
+            <p>
+              首次授权和币安侧撤权由你本人完成。OAuth 凭据仅加密保存在服务端。
+            </p>
+            <div className="settings-actions">
+              <button
+                className="primary-button"
+                disabled={busy || !bootstrap}
+                onClick={() => void connectBinance()}
+              >
+                {busy ? (
+                  <LoaderCircle className="spin" size={16} />
+                ) : (
+                  <Link2 size={16} />
+                )}
+                {connected ? "重新授权" : "连接币安"}
+              </button>
+              {connected && (
+                <>
+                  <button
+                    className="secondary-button"
+                    disabled={busy}
+                    onClick={() => void inspectTools()}
+                  >
+                    检查工具目录
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label="断开币安连接"
+                    onClick={() => {
+                      void api("/api/auth/binance/disconnect", {})
+                        .then(() => refreshBootstrap())
+                        .then(() =>
+                          setNotice(
+                            "应用内连接已断开；币安侧撤权请在币安授权管理中完成。",
+                          ),
+                        )
+                        .catch((e) => setError(e.message));
+                    }}
+                  >
+                    <Unplug size={18} />
+                  </button>
+                </>
               )}
             </div>
-            <div className="settings-block">
-              <h3>模型服务</h3>
-              {bootstrap?.providers.map((p) => (
-                <div className="provider-row" key={p.id}>
+            {catalog && (
+              <details className="catalog">
+                <summary>{catalog.length} 个工具 · 原始 Schema</summary>
+                <pre>{JSON.stringify(catalog, null, 2)}</pre>
+              </details>
+            )}
+          </section>
+          <section className="settings-block">
+            <h3>模型服务</h3>
+            {bootstrap?.providers.map((p) => (
+              <div className="provider-row" key={p.id}>
+                <div>
                   <strong>
                     {
                       {
@@ -1138,404 +1696,117 @@ export function Workbench() {
                     {p.model}
                     {p.thinkingLevel ? " · " + p.thinkingLevel : ""}
                   </span>
-                  <span className={p.available ? "positive" : "subtle"}>
-                    {p.available ? "已配置" : "待配置"}
-                  </span>
                 </div>
-              ))}
-              <p>
-                Gemini 通过 Vertex AI 服务账号调用，默认使用最高 HIGH
-                思考档位。凭据只保存在服务端；不会静默降档或切换模型。
-              </p>
-            </div>
-            <div className="settings-block">
-              <label className="checkbox-label">
-                <input
-                  type="checkbox"
-                  checked={policyEnabled}
-                  onChange={(e) => {
-                    setPolicyEnabled(e.target.checked);
-                    requestId.current = null;
-                  }}
-                />
-                为下一次任务显式设置风险限额
-              </label>
-              <p>
-                未启用时只分析风险，不生成具体仓位调整数量。以下数值需由你确认，不是投资建议。
-              </p>
-              {policyEnabled && (
-                <div className="risk-inputs">
-                  <label>
-                    单资产占比上限（%）
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={maxPosition}
-                      onChange={(e) => {
-                        setMaxPosition(Number(e.target.value));
-                        requestId.current = null;
-                      }}
-                    />
-                  </label>
-                  <label>
-                    非 USDT 总敞口上限（%）
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={maxGross}
-                      onChange={(e) => {
-                        setMaxGross(Number(e.target.value));
-                        requestId.current = null;
-                      }}
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
-            <button
-              className="primary-button modal-done"
-              onClick={() => setSettings(false)}
-            >
-              完成 <Check size={15} />
-            </button>
-          </section>
-        </div>
-      )}
-      {showEvidence && report && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setShowEvidence(false);
-          }}
-        >
-          <section
-            className="modal evidence-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="evidence-title"
-          >
-            <div className="modal-heading">
-              <h2 id="evidence-title">证据与数据来源</h2>
-              <button
-                className="icon-button"
-                aria-label="关闭证据"
-                onClick={() => setShowEvidence(false)}
-              >
-                <X size={20} />
-              </button>
-            </div>
-            {report.evidence.map((e) => (
-              <div className="evidence-item" key={e.id}>
-                <div>
-                  <span className="tiny-tag">{e.source}</span>
-                  <strong>{e.label}</strong>
-                </div>
-                <p>
-                  数据时点 {date(e.asOf)} · 获取于 {date(e.observedAt)}
-                </p>
-                <code>{e.sha256}</code>
-                {e.warnings.map((w) => (
-                  <p className="warning" key={w}>
-                    {w}
-                  </p>
-                ))}
-                <a
-                  className="text-button"
-                  href={`/api/artifacts/${e.id}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  查看原始产物 <ExternalLink size={12} />
-                </a>
+                <span className={p.available ? "positive" : "subtle"}>
+                  {p.available ? "已配置" : "待配置"}
+                </span>
               </div>
             ))}
+            <p>
+              Gemini 通过 Vertex AI 调用，使用 HIGH
+              思考档位。不会静默降档或切换模型。
+            </p>
           </section>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Report({
-  report,
-  onEvidence,
-  onDownload,
-}: {
-  report: AnalysisReport;
-  onEvidence: () => void;
-  onDownload: () => void;
-}) {
-  const chartData:
-    | { time: number; equity?: number; benchmark?: number; price?: number }[]
-    | undefined = report.backtest
-    ? report.backtest.equity
-    : report.market?.candles
-        .slice(-500)
-        .map((c) => ({ time: c.closeTime, price: c.close }));
-  const metrics = report.backtest?.metrics;
-  return (
-    <section className="report panel">
-      <div className="report-heading">
-        <div>
-          <span className="eyebrow">RESEARCH BRIEF</span>
-          <h2>{report.title}</h2>
-          <p>数据时点：{date(report.asOf)}</p>
-        </div>
-        <button
-          className="icon-button"
-          aria-label="下载报告 JSON"
-          onClick={onDownload}
-        >
-          <ArrowDownToLine size={18} />
-        </button>
-      </div>
-      <div className={`verdict ${report.stance}`}>
-        <span>
-          <ShieldCheck size={15} />
-          {
-            {
-              bullish: "偏多观点",
-              bearish: "偏空观点",
-              neutral: "中性观点",
-              insufficient: "证据不足 / 风险约束",
-            }[report.stance]
-          }
-        </span>
-        <small>研究判断，非交易指令</small>
-      </div>
-      <p className="report-summary">{report.summary}</p>
-      {metrics && (
-        <div className="metrics-grid">
-          <div>
-            <span>策略收益</span>
-            <strong
-              className={metrics.totalReturn >= 0 ? "positive" : "negative"}
-            >
-              {pct(metrics.totalReturn)}
-            </strong>
-          </div>
-          <div>
-            <span>买入持有</span>
-            <strong>{pct(metrics.benchmarkReturn)}</strong>
-          </div>
-          <div>
-            <span>最大回撤</span>
-            <strong className="negative">
-              {(metrics.maxDrawdown * 100).toFixed(2)}%
-            </strong>
-          </div>
-          <div>
-            <span>模拟成交</span>
-            <strong>
-              {metrics.trades}
-              <small> 次</small>
-            </strong>
-          </div>
-        </div>
-      )}
-      {chartData && (
-        <div className="report-chart">
-          <div className="chart-label">
-            {report.backtest
-              ? "净值对比 · 黄色为策略 / 灰色为基准"
-              : "已收盘价格 · USDT"}
-          </div>
-          <ResponsiveContainer width="100%" height={230}>
-            {report.backtest ? (
-              <LineChart data={chartData}>
-                <CartesianGrid stroke="#ffffff09" vertical={false} />
-                <XAxis
-                  dataKey="time"
-                  tickFormatter={(t) =>
-                    new Date(t).toLocaleDateString("zh-CN", {
-                      month: "numeric",
-                      day: "numeric",
-                    })
-                  }
-                  tick={{ fontSize: 10, fill: "#838992" }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={45}
-                />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  tick={{ fontSize: 10, fill: "#838992" }}
-                  tickFormatter={number}
-                  axisLine={false}
-                  tickLine={false}
-                  width={65}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#22252a",
-                    border: "1px solid #393d44",
-                    fontSize: 12,
-                  }}
-                  labelFormatter={(t) => date(Number(t))}
-                />
-                <Line
-                  dataKey="benchmark"
-                  name="买入持有"
-                  stroke="#656d7c"
-                  dot={false}
-                  strokeWidth={1.5}
-                  isAnimationActive={false}
-                />
-                <Line
-                  dataKey="equity"
-                  name="策略净值"
-                  stroke="#e8c261"
-                  dot={false}
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                />
-              </LineChart>
-            ) : (
-              <AreaChart data={chartData}>
-                <CartesianGrid stroke="#ffffff09" vertical={false} />
-                <XAxis
-                  dataKey="time"
-                  tickFormatter={(t) =>
-                    new Date(t).toLocaleDateString("zh-CN", {
-                      month: "numeric",
-                      day: "numeric",
-                    })
-                  }
-                  tick={{ fontSize: 10, fill: "#838992" }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={45}
-                />
-                <YAxis
-                  domain={["auto", "auto"]}
-                  tick={{ fontSize: 10, fill: "#838992" }}
-                  tickFormatter={number}
-                  axisLine={false}
-                  tickLine={false}
-                  width={65}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#22252a",
-                    border: "1px solid #393d44",
-                    fontSize: 12,
-                  }}
-                  labelFormatter={(t) => date(Number(t))}
-                />
-                <Area
-                  dataKey="price"
-                  name="价格"
-                  stroke="#e8c261"
-                  fill="#e8c26112"
-                  strokeWidth={2}
-                  isAnimationActive={false}
-                />
-              </AreaChart>
+          <section className="settings-block">
+            <label className="switch-label">
+              <span>
+                <strong>设置风险限额</strong>
+                <small>仅应用于下一次研究任务</small>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                aria-label="为下一次任务显式设置风险限额"
+                checked={policyEnabled}
+                onChange={(e) => {
+                  setPolicyEnabled(e.target.checked);
+                  requestId.current = null;
+                }}
+              />
+              <span className="switch-track" aria-hidden="true" />
+            </label>
+            <p>
+              未启用时只分析风险，不生成具体仓位调整数量。以下限额需由你确认，不是投资建议。
+            </p>
+            {policyEnabled && (
+              <div className="risk-inputs">
+                <label>
+                  单资产占比上限（%）
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={maxPosition}
+                    onChange={(e) => {
+                      setMaxPosition(Number(e.target.value));
+                      requestId.current = null;
+                    }}
+                  />
+                </label>
+                <label>
+                  非 USDT 总敞口上限（%）
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={maxGross}
+                    onChange={(e) => {
+                      setMaxGross(Number(e.target.value));
+                      requestId.current = null;
+                    }}
+                  />
+                </label>
+              </div>
             )}
-          </ResponsiveContainer>
-        </div>
+          </section>
+          <button
+            className="primary-button modal-done"
+            onClick={() => setSettings(false)}
+          >
+            完成
+          </button>
+        </Dialog>
       )}
-      {report.portfolio && (
-        <div className="portfolio-table">
-          <h3>
-            已估值现货小计{" "}
-            <span>{number(report.portfolio.pricedValueUsdt)} USDT</span>
-          </h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>资产</th>
-                  <th>可用 / 冻结</th>
-                  <th>估值 · USDT</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.portfolio.holdings.map((h) => (
-                  <tr key={h.asset}>
-                    <td>{h.asset}</td>
-                    <td>
-                      {h.free} / {h.locked}
-                    </td>
-                    <td>
-                      {h.valueUsdt === null ? "无法估值" : number(h.valueUsdt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="subtle">{report.risk.coverage}</p>
-        </div>
-      )}
-      <div className="risk-results">
-        <h3>
-          <Shield size={16} />
-          确定性风控检查
-        </h3>
-        {report.risk.checks.map((c, i) => (
-          <div className={`risk-check ${c.status}`} key={`${c.code}:${i}`}>
-            <span>
-              {c.status === "pass" ? (
-                <CheckCircle2 size={14} />
-              ) : (
-                <Shield size={14} />
-              )}
-            </span>
-            <p>{c.message}</p>
-            <small>
-              {{ pass: "通过", warn: "注意", block: "限制" }[c.status]}
-            </small>
-          </div>
-        ))}
-      </div>
-      <div className="findings">
-        {report.sections
-          .filter((s) => s.role !== "report")
-          .map((s, i) => (
-            <details key={`${s.role}:${i}`}>
-              <summary>
-                <span>{roleNames[s.role]}</span>
-                <ChevronDown size={15} />
-              </summary>
-              <p>{s.finding.summary}</p>
-              {s.finding.facts.map((f, j) => (
-                <div className="finding-fact" key={j}>
-                  <p>{f.claim}</p>
-                  <button className="citation-button" onClick={onEvidence}>
-                    {f.evidenceIds.length} 条证据 <ArrowUpRight size={10} />
-                  </button>
-                </div>
-              ))}
-              {s.finding.risks.map((r) => (
-                <p className="finding-risk" key={r}>
-                  {r}
+
+      {showEvidence && report && (
+        <Dialog
+          title="证据与数据来源"
+          wide
+          onClose={() => setShowEvidence(false)}
+        >
+          <p className="evidence-intro">
+            原始快照与确定性计算独立保存，以下引用均来自当前报告。
+          </p>
+          {report.evidence.map((e) => (
+            <div className="evidence-item" key={e.id}>
+              <div>
+                <span className="tiny-tag">
+                  {e.source === "binance_mcp" ? "官方 MCP" : "确定性计算"}
+                </span>
+                <strong>{e.label}</strong>
+              </div>
+              <p>
+                数据时点 {date(e.asOf)} · 获取于 {date(e.observedAt)}
+              </p>
+              <code>{e.sha256}</code>
+              {e.warnings.map((w) => (
+                <p className="warning" key={w}>
+                  {w}
                 </p>
               ))}
-            </details>
+              <a
+                className="text-button"
+                href={"/api/artifacts/" + e.id}
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看原始产物
+                <ExternalLink size={14} />
+              </a>
+            </div>
           ))}
-      </div>
-      <div className="limitations">
-        <h3>假设与局限</h3>
-        <ul>
-          {[
-            ...new Set([
-              ...(report.backtest?.assumptions ?? []),
-              ...report.limitations,
-            ]),
-          ].map((l) => (
-            <li key={l}>{l}</li>
-          ))}
-        </ul>
-      </div>
-      <div className="report-footer">
-        <p>{report.disclaimer}</p>
-        <button className="text-button" onClick={onEvidence}>
-          查看全部证据 <ArrowRight size={14} />
-        </button>
-      </div>
-    </section>
+        </Dialog>
+      )}
+    </div>
   );
 }

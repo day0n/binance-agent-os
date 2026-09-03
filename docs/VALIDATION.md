@@ -7,7 +7,7 @@ Snapshot: 2026-09-03. This is a partially integrated release, not acceptance of 
 | Layer                       | Evidence                                                                                                  | Result                                                                           |
 | --------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
 | Static checks               | pnpm lint; pnpm typecheck                                                                                 | Pass                                                                             |
-| Unit tests                  | Vitest: finance 13, security 10, agent contracts 6, Gemini 7                                              | 36 passed                                                                        |
+| Unit tests                  | Vitest: finance 13, security 10, agent contracts 6, Gemini 7, UI/contrast 16                              | 52 passed                                                                        |
 | Production build            | pnpm build; Vercel Node 24 build                                                                          | Pass; 14 durable steps, 1 workflow                                               |
 | Real Gemini single turn     | Vertex AI service account; gemini-3.8-flash; HIGH                                                         | Pass; actual provider usage returned                                             |
 | Real Gemini tool round trip | Two model turns, two read-only calls, native signed content replay                                        | Pass; tool call IDs paired independently                                         |
@@ -51,3 +51,9 @@ The model smoke tool uses deterministic non-financial fixture inputs to check th
 2. Have the user complete official Binance OAuth; review discovered schemas and configure only verified read operations.
 3. Run all three workflows, compare report metrics to immutable source and calculation snapshots, and record redacted run IDs and timestamps.
 4. Exercise the unverified failure, isolation, recovery and browser scenarios above before describing the project as fully accepted.
+
+## Binance-style UI revision
+
+The feature/binance-ui revision replaces the sidebar shell with the reference-aligned top navigation, overview cards, tabs, custom selectors, history tables and native dialogs. Local browser verification covered dropdown keyboard selection, ETH example consistency, 320/390/768px layouts, light/dark mode, risk switch, history filtering and FAQ disclosure. Tab/Shift+Tab focus wrap, Escape dismissal and trigger focus restoration were tested after correcting a native-dialog focus-boundary issue. See [UI design record](UI.md) for exact type tokens, reference scope and contrast ratios.
+
+The 16 new tests cover UI markup/semantics, deferred chart import and nine explicit color-contrast pairs. They are not a replacement for real financial workflow acceptance or a full automated browser suite. Backend configuration and the Redis/OAuth blockers above are unchanged by this UI revision.

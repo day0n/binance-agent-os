@@ -41,6 +41,7 @@ Next.js + TypeScript + Vercel Workflow + MongoDB + Redis。
 - [环境配置与个人空间部署](docs/CONFIGURATION.md)
 - [Binance OAuth / MCP 审核](docs/MCP.md)
 - [验收记录](docs/VALIDATION.md)
+- [UI 样式、排版与交互验收](docs/UI.md)
 - [参赛演示脚本](docs/DEMO.md)
 - [开源设计参考](THIRD_PARTY_NOTICES.md)
 
