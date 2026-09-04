@@ -14,7 +14,7 @@ import {
   validateBinding,
   mappedArguments,
   atPath,
-} from "@/adapters/binance/policy";
+} from "@/adapters/binance/mcp-policy";
 import { eventsAfter, type RunRecord } from "@/adapters/persistence/store";
 
 beforeAll(() => {

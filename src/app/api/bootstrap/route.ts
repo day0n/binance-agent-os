@@ -1,7 +1,7 @@
 import { optionalUser, apiError } from "@/adapters/http/session";
 import { connectionStatus } from "@/adapters/binance/oauth";
 import { config } from "@/platform/config";
-import { parseBindings } from "@/adapters/binance/policy";
+import { parseBindings } from "@/adapters/binance/mcp-policy";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {

@@ -15,7 +15,7 @@ import { config, modelConfig } from "@/platform/config";
 import { sha256 } from "@/platform/crypto";
 import { accessToken } from "@/adapters/binance/oauth";
 import { fetchMarketData } from "@/adapters/binance/data-port";
-import { parseBindings, type Capability } from "@/adapters/binance/policy";
+import { parseBindings, type Capability } from "@/adapters/binance/mcp-policy";
 import { ProviderRouter, modelError } from "@/adapters/llm/providers";
 import {
   assertActive,
@@ -81,17 +81,18 @@ export async function initializeStep(runId: string) {
     await startRun(runId);
     const run = await assertActive(runId);
     modelConfig(run.input.provider);
-    await accessToken(run.ownerId);
-    const bindings = parseBindings(config().BINANCE_TOOL_BINDINGS_JSON);
-    const needed: Capability[] =
-      run.input.mode === "portfolio" ? ["balances", "prices"] : ["candles"];
-    for (const capability of needed)
-      if (!bindings[capability])
+    if (run.input.mode === "portfolio") {
+      const bindings = parseBindings(config().BINANCE_TOOL_BINDINGS_JSON);
+      const hasExecutor = Boolean(config().EXECUTOR_URL);
+      const hasMcp = Boolean(bindings.balances);
+      if (!hasExecutor && !hasMcp)
         throw new AppError(
-          "MCP_CAPABILITY_UNCONFIGURED",
-          `${capability} 尚未完成官方工具映射。请先连接并审核工具目录。`,
+          "ACCOUNT_CONNECTION_REQUIRED",
+          "现货账户体检需要已核验的执行器连接，或已审核的官方 MCP 映射。网站不会假装 MCP 已连接。",
           503,
         );
+      if (!hasExecutor) await accessToken(run.ownerId);
+    }
     const asOf = run.createdAt;
     const userEvidence: EvidenceRef = {
       id: artifactId(runId, "user-input"),
@@ -170,7 +171,10 @@ export async function fetchDataStep(runId: string, request: DataRequest) {
     await emit(runId, `${key}:start`, {
       type: "tool.started",
       tool: `binance.${request.capability}`,
-      message: `正在读取官方 MCP：${request.capability}`,
+      message:
+        request.capability === "candles" || request.capability === "prices"
+          ? `正在获取行情：${request.capability}`
+          : `正在读取账户数据：${request.capability}`,
     });
     const started = Date.now();
     const result = await fetchMarketData(
@@ -282,7 +286,7 @@ export async function assembleContextStep(
       if (!candles.length)
         throw new AppError(
           "INSUFFICIENT_DATA",
-          "官方 MCP 没有返回可用的已收盘 K 线。",
+          "没有返回可用的已收盘 K 线。",
           422,
         );
       const requestedStart =

@@ -14,7 +14,7 @@ import {
   mappedArguments,
   atPath,
   type Capability,
-} from "./policy";
+} from "./mcp-policy";
 
 async function withClient<T>(
   ownerId: string,

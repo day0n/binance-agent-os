@@ -1,4 +1,4 @@
-import { discoverTools } from "@/adapters/binance/client";
+import { discoverTools } from "@/adapters/binance/mcp-client";
 import { requireWrite, apiError } from "@/adapters/http/session";
 import { rateLimit } from "@/adapters/persistence/redis";
 export async function POST(request: Request) {
