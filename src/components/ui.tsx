@@ -1,6 +1,14 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
+} from "react";
 import { Check, ChevronDown, X } from "lucide-react";
 
 export type SelectOption = { value: string; label: string; disabled?: boolean };
@@ -208,5 +216,89 @@ export function Dialog({
       </div>
       <div className="modal-content">{children}</div>
     </dialog>
+  );
+}
+
+export function Input({
+  label,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & { label: string }) {
+  const id = useId();
+  return (
+    <label className="field" htmlFor={id}>
+      <span className="field-label">{label}</span>
+      <input id={id} {...props} />
+    </label>
+  );
+}
+
+export function TextArea({
+  label,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string }) {
+  const id = useId();
+  return (
+    <label className="field" htmlFor={id}>
+      <span className="field-label">{label}</span>
+      <textarea id={id} {...props} />
+    </label>
+  );
+}
+
+export function Tabs({
+  tabs,
+  value,
+  onChange,
+}: {
+  tabs: { id: string; label: string }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div className="chat-tabs" role="tablist">
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={value === tab.id}
+          className={value === tab.id ? "active" : ""}
+          onClick={() => onChange(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export function Skeleton({ label = "加载中" }: { label?: string }) {
+  return (
+    <div className="skeleton" role="status" aria-label={label}>
+      <span />
+      <span />
+      <span />
+    </div>
+  );
+}
+
+export function Toast({
+  message,
+  onDismiss,
+}: {
+  message: string;
+  onDismiss: () => void;
+}) {
+  useEffect(() => {
+    const timer = window.setTimeout(onDismiss, 4000);
+    return () => window.clearTimeout(timer);
+  }, [onDismiss]);
+  return (
+    <div className="toast" role="status">
+      <p>{message}</p>
+      <button type="button" className="icon-button" aria-label="关闭通知" onClick={onDismiss}>
+        <X size={16} />
+      </button>
+    </div>
   );
 }

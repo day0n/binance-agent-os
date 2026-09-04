@@ -84,12 +84,12 @@ describe("shared Binance-style UI contracts", () => {
     expect(css).toContain("prefers-reduced-motion: reduce");
   });
   it("loads the report and chart code only when an actual report is rendered", () => {
-    const workbench = readFileSync(
-      new URL("../src/components/workbench.tsx", import.meta.url),
+    const canvas = readFileSync(
+      new URL("../src/components/research/research-canvas.tsx", import.meta.url),
       "utf8",
     );
-    expect(workbench).not.toContain('from "recharts"');
-    expect(workbench).toContain('import("./report")');
+    expect(canvas).not.toContain('from "recharts"');
+    expect(canvas).toContain('import("@/components/report")');
   });
 });
 

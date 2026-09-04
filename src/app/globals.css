@@ -2435,6 +2435,234 @@ tbody tr:has(.table-empty):hover {
     font-size: var(--text-xs);
   }
 }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.chat-app .chat-layout {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: calc(100dvh - 64px);
+}
+.session-rail {
+  border-right: 1px solid var(--border-soft);
+  padding: 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--surface);
+}
+.session-rail ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: auto;
+}
+.session-rail li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.session-rail li > button:first-child {
+  flex: 1;
+  min-height: 40px;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--secondary);
+}
+.session-rail li > button.active,
+.session-rail li > button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.chat-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.mobile-tabs {
+  display: none;
+  padding: 8px 16px 0;
+}
+.chat-tabs {
+  display: flex;
+  gap: 8px;
+}
+.chat-tabs button,
+.session-rail li > button,
+.chat-composer button {
+  transition:
+    background-color 180ms ease-out,
+    color 180ms ease-out;
+}
+.chat-tabs button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: var(--secondary);
+}
+.chat-tabs button.active {
+  background: var(--selected);
+  color: var(--text);
+}
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 42%) minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+.chat-column,
+.research-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 64px);
+}
+.chat-column {
+  border-right: 1px solid var(--border-soft);
+}
+.chat-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.chat-empty,
+.research-empty {
+  margin: auto 0;
+  max-width: 36rem;
+  color: var(--secondary);
+}
+.chat-bubble {
+  max-width: 40rem;
+}
+.chat-bubble.user {
+  margin-left: auto;
+  background: var(--selected);
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+.chat-bubble.assistant {
+  color: var(--text);
+}
+.chat-composer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 16px;
+  background: var(--bg);
+  border-top: 1px solid var(--border-soft);
+}
+.chat-composer textarea {
+  flex: 1;
+  resize: none;
+  min-height: 52px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-raised);
+}
+.research-column {
+  padding: 16px 20px 24px;
+  overflow: auto;
+  gap: 16px;
+}
+.agent-status,
+.toast {
+  color: var(--secondary);
+}
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 40;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+.auth-form,
+.action-card,
+.connection-list,
+.evidence-list,
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.action-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface-raised);
+}
+.action-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.action-card dt {
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+.skeleton span {
+  display: block;
+  height: 10px;
+  margin: 8px 0;
+  border-radius: 4px;
+  background: var(--hover);
+}
+@media (max-width: 1279px) {
+  .chat-app .chat-layout {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+  .chat-app .chat-layout.rail-open {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .session-rail {
+    overflow: hidden;
+  }
+  .rail-toggle {
+    display: inline-flex;
+  }
+}
+@media (min-width: 1280px) {
+  .rail-toggle {
+    display: none;
+  }
+}
+@media (max-width: 899px) {
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  .mobile-tabs {
+    display: block;
+  }
+  .workspace.chat .research-column,
+  .workspace.research .chat-column {
+    display: none;
+  }
+  .chat-column,
+  .research-column {
+    min-height: calc(100dvh - 116px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
