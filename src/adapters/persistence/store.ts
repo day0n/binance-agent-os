@@ -92,24 +92,32 @@ export async function createRun(
     );
   const sessionId = input.sessionId ?? randomUUID();
   const now = new Date().toISOString();
-  if (
-    input.sessionId &&
-    !(await db
-      .collection<SessionRecord>("sessions")
-      .findOne({ _id: sessionId, ownerId }))
-  )
+  const legacySession = input.sessionId
+    ? await db
+        .collection<SessionRecord>("sessions")
+        .findOne({ _id: sessionId, ownerId })
+    : null;
+  const chatSession = input.sessionId
+    ? await db
+        .collection<{ _id: string; userId: string; deletedAt?: Date }>(
+          "chat_sessions",
+        )
+        .findOne({ _id: sessionId, userId: ownerId, deletedAt: { $exists: false } })
+    : null;
+  if (input.sessionId && !legacySession && !chatSession)
     throw new AppError("NOT_FOUND", "会话不存在。", 404);
   // Charge only new requests, before creating any durable record. A rejected quota
   // cannot leave a queued run that an identical request could dispatch later.
   await beforeCreate?.();
-  await db.collection<SessionRecord>("sessions").updateOne(
-    { _id: sessionId, ownerId },
-    {
-      $set: { updatedAt: now },
-      $setOnInsert: { title: input.prompt.slice(0, 60), createdAt: now },
-    },
-    { upsert: !input.sessionId },
-  );
+  if (!chatSession)
+    await db.collection<SessionRecord>("sessions").updateOne(
+      { _id: sessionId, ownerId },
+      {
+        $set: { updatedAt: now },
+        $setOnInsert: { title: input.prompt.slice(0, 60), createdAt: now },
+      },
+      { upsert: !input.sessionId || Boolean(legacySession) },
+    );
   const run: RunRecord = {
     _id: randomUUID(),
     ownerId,
@@ -412,6 +420,14 @@ export async function recall(ownerId: string, symbol: string, asOf: string) {
     ])
     .toArray();
 }
+export {
+  createChatSession,
+  listChatSessions,
+  getChatSession,
+} from "./chat-store";
+export { getAction } from "./action-store";
+export { listConnections } from "./connection-store";
+
 export async function recordNode(
   runId: string,
   role: AgentRole,

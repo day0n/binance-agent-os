@@ -70,7 +70,7 @@ describe("shared Binance-style UI contracts", () => {
     expect(number(12345.678)).toBe("12,345.68");
     expect(pct(-0.0123)).toBe("-1.23%");
     expect(pct(0.0123)).toBe("+1.23%");
-    expect(Object.keys(roleNames)).toHaveLength(8);
+    expect(Object.keys(roleNames)).toHaveLength(9);
   });
   it("centralizes type sizes and avoids external font-loading requests", () => {
     const css = readFileSync(

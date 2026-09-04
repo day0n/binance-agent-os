@@ -68,6 +68,18 @@ export async function notifyRun(runId: string) {
     .publish(redisKey(`run:${runId}`), "updated")
     .catch(() => undefined);
 }
+export async function notifySession(sessionId: string) {
+  await (await redis())
+    .publish(redisKey(`session:${sessionId}`), "updated")
+    .catch(() => undefined);
+}
+export async function withSessionRunLock<T>(
+  userId: string,
+  sessionId: string,
+  fn: () => Promise<T>,
+) {
+  return withLease(`session-run:${userId}:${sessionId}`, fn);
+}
 export async function closeRedis() {
   if (globalRedis.baoRedis) await (await globalRedis.baoRedis).close();
   globalRedis.baoRedis = undefined;

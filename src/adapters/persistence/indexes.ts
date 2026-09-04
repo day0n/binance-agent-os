@@ -46,6 +46,21 @@ export const schemaIndexes: IndexSpec[] = [
     options: { unique: true, sparse: true, name: "chat_messages_user_request" },
   },
   {
+    collection: "chat_runs",
+    keys: { userId: 1, requestId: 1 },
+    options: { unique: true, name: "chat_runs_user_request" },
+  },
+  {
+    collection: "chat_runs",
+    keys: { userId: 1, status: 1 },
+    options: { name: "chat_runs_user_status" },
+  },
+  {
+    collection: "kms_enrollments",
+    keys: { expiresAt: 1 },
+    options: { expireAfterSeconds: 0, name: "kms_enrollments_expires" },
+  },
+  {
     collection: "session_events",
     keys: { sessionId: 1, seq: 1 },
     options: { unique: true, name: "session_events_seq" },

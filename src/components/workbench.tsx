@@ -1231,6 +1231,7 @@ export function Workbench() {
                                     bear: "反证与未覆盖风险",
                                     risk: "确定性风控检查",
                                     report: "综合结论与证据",
+                                    action: "动作草案与确认边界",
                                   }[role]
                                 }
                               </small>

@@ -42,6 +42,11 @@ describe("agent contracts and routing", () => {
       "strategy",
     ]);
   });
+  it("keeps the action planner off the trade endpoints", () => {
+    const catalog = new ToolCatalog("action", {} as ResearchContext);
+    for (const name of ["create_order", "cancel_order", "transfer", "read_market_metrics"])
+      expect(() => catalog.execute({ id: "c", name, args: {} })).toThrow();
+  });
   it("enforces tool permissions and blocks arbitrary code/trades", () => {
     const catalog = new ToolCatalog("market", {} as ResearchContext);
     for (const name of [

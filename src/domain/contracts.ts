@@ -13,6 +13,7 @@ export const roleSchema = z.enum([
   "bear",
   "risk",
   "report",
+  "action",
 ]);
 export type AgentRole = z.infer<typeof roleSchema>;
 export const intervalSchema = z.enum(["1h", "4h", "1d"]);
@@ -81,7 +82,12 @@ export const terminalStatuses: RunStatus[] = [
 export type EvidenceRef = {
   id: string;
   runId: string;
-  source: "binance_mcp" | "calculation" | "user";
+  source:
+    | "binance_public_rest"
+    | "binance_signed_rest"
+    | "binance_mcp"
+    | "calculation"
+    | "user";
   label: string;
   tool?: string;
   symbol?: string;

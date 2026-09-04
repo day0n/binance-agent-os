@@ -21,6 +21,8 @@ export type ResearchContext = {
   risk: RiskAssessment;
   findings: AgentFinding[];
   memory: { summary: string; availableAt: string }[];
+  recentMessages?: { role: "user" | "assistant"; content: string }[];
+  sessionSummary?: string;
 };
 export function compactContext(context: ResearchContext) {
   return {
@@ -31,6 +33,8 @@ export function compactContext(context: ResearchContext) {
       interval: context.input.interval,
       lookbackDays: context.input.lookbackDays,
     },
+    recentMessages: context.recentMessages,
+    sessionSummary: context.sessionSummary,
     asOf: context.asOf,
     evidence: context.evidence.map((e) => ({
       id: e.id,

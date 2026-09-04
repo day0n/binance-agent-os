@@ -14,7 +14,7 @@ import {
 import { config, modelConfig } from "@/platform/config";
 import { sha256 } from "@/platform/crypto";
 import { accessToken } from "@/adapters/binance/oauth";
-import { callCapability } from "@/adapters/binance/client";
+import { fetchMarketData } from "@/adapters/binance/data-port";
 import { parseBindings, type Capability } from "@/adapters/binance/policy";
 import { ProviderRouter, modelError } from "@/adapters/llm/providers";
 import {
@@ -173,7 +173,7 @@ export async function fetchDataStep(runId: string, request: DataRequest) {
       message: `正在读取官方 MCP：${request.capability}`,
     });
     const started = Date.now();
-    const result = await callCapability(
+    const result = await fetchMarketData(
       run.ownerId,
       request.capability,
       request.values,
@@ -183,8 +183,8 @@ export async function fetchDataStep(runId: string, request: DataRequest) {
     const evidence: EvidenceRef = {
       id: artifactId(runId, key),
       runId,
-      source: "binance_mcp",
-      label: `${request.capability} · 官方 MCP`,
+      source: result.source,
+      label: `${request.capability} · ${result.source}`,
       tool: result.tool,
       symbol:
         typeof request.values.symbol === "string"

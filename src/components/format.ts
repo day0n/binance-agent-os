@@ -9,6 +9,7 @@ export const roleNames: Record<AgentRole, string> = {
   bear: "空方研究员",
   risk: "风险复核员",
   report: "报告编审",
+  action: "动作规划",
 };
 export const pct = (n: number) =>
   `${n >= 0 ? "+" : ""}${(n * 100).toFixed(2)}%`;
