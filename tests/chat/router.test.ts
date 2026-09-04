@@ -5,7 +5,11 @@ import {
   assertSessionCanStart,
   assertUserRunBudget,
 } from "@/domain/chat";
-import { heuristicIntent } from "@/application/chat/router";
+import {
+  heuristicIntent,
+  researchParamsFromChat,
+  shouldSkipModelClassify,
+} from "@/application/chat/router";
 import {
   assertDraftLimits,
   missingActionFields,
@@ -26,6 +30,26 @@ describe("chat routing and safety", () => {
     expect(heuristicIntent("看一下现货账户").taskKind).toBe("portfolio");
     expect(heuristicIntent("市价买入").taskKind).toBe("action");
     expect(heuristicIntent("市价买入").needsClarification).toBe(true);
+    expect(heuristicIntent("研究一下 BTCUSDT 近 24 小时行情").taskKind).toBe(
+      "research",
+    );
+    expect(
+      shouldSkipModelClassify(
+        "研究一下 BTCUSDT 近 24 小时行情",
+        heuristicIntent("研究一下 BTCUSDT 近 24 小时行情"),
+      ),
+    ).toBe(true);
+    expect(
+      researchParamsFromChat(
+        "研究一下 BTCUSDT 近 24 小时行情",
+        heuristicIntent("研究一下 BTCUSDT 近 24 小时行情"),
+      ),
+    ).toEqual({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      lookbackDays: 30,
+      debateRounds: 0,
+    });
   });
   it("enforces one active run per session and two per user", () => {
     expect(() => assertSessionCanStart(true)).toThrow(/进行中/);

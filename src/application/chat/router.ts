@@ -71,6 +71,31 @@ export function mergeIntent(model: unknown, fallback: IntentPlan): IntentPlan {
   return parsed.data;
 }
 
+export function shouldSkipModelClassify(content: string, plan: IntentPlan) {
+  return (
+    isBareConfirmText(content) ||
+    plan.taskKind === "research" ||
+    plan.taskKind === "backtest"
+  );
+}
+
+export function researchParamsFromChat(content: string, plan: IntentPlan) {
+  const upper = content.toUpperCase();
+  const symbol =
+    plan.symbol ??
+    upper.match(/[A-Z0-9]{2,15}USDT/)?.[0] ??
+    "BTCUSDT";
+  const interval =
+    plan.interval ??
+    (/24\s*小时|近\s*24|1h/i.test(content) ? "1h" : "1d");
+  return {
+    symbol,
+    interval,
+    lookbackDays: 30,
+    debateRounds: 0 as const,
+  };
+}
+
 export function publicStatusMessage(plan: IntentPlan) {
   if (plan.taskKind === "portfolio") return "正在检查现货账户数据";
   if (plan.taskKind === "backtest") return "正在准备策略回测";

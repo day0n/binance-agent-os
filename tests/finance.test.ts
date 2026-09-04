@@ -4,6 +4,7 @@ import {
   rsi,
   candleWarnings,
   INTERVAL_MS,
+  marketMetrics,
 } from "@/domain/finance/market";
 import {
   applyLimits,
@@ -11,6 +12,7 @@ import {
   normalizePortfolio,
 } from "@/domain/finance/risk";
 import { runBacktest } from "@/domain/finance/backtest";
+import { composeMarketResearchFinding } from "@/domain/finance/research-brief";
 import { backtestConfigSchema, type MarketSnapshot } from "@/domain/contracts";
 
 const step = INTERVAL_MS["1d"];
@@ -142,5 +144,30 @@ describe("backtesting", () => {
     const s = snapshot();
     s.candles.splice(10, 1);
     expect(() => runBacktest(s, c, "e")).toThrow();
+  });
+});
+describe("deterministic research brief", () => {
+  it("cites only provided evidence and does not invent prices", () => {
+    const s = snapshot(40);
+    const metrics = marketMetrics(s.candles, "1d");
+    const finding = composeMarketResearchFinding({
+      symbol: "BTCUSDT",
+      interval: "1d",
+      lookbackDays: 30,
+      asOf: s.asOf,
+      metrics,
+      candles: s.candles,
+      evidenceIds: ["market", "metrics"],
+    });
+    expect(
+      finding.facts.every((fact) =>
+        fact.evidenceIds.every((id) => id === "market" || id === "metrics"),
+      ),
+    ).toBe(true);
+    expect(finding.summary).toContain("已收盘");
+    expect(finding.facts.map((fact) => fact.claim).join("\n")).toContain(
+      metrics.lastClose.toFixed(2),
+    );
+    expect(finding.limitations.join("")).toMatch(/不是预测/);
   });
 });

@@ -12,6 +12,8 @@ import {
   heuristicIntent,
   mergeIntent,
   publicStatusMessage,
+  researchParamsFromChat,
+  shouldSkipModelClassify,
 } from "@/application/chat/router";
 import {
   assertDraftLimits,
@@ -59,39 +61,41 @@ export async function classifyChatStep(runId: string) {
     const run = await getChatRun(runId);
     await startChatRun(runId);
     const session = await getChatSession(run.sessionId, run.userId);
-    const messages = await recentChatMessages(run.sessionId, run.userId, 8);
     const fallback = heuristicIntent(run.content);
     let plan = fallback;
-    try {
-      const agent = buildAgent("supervisor");
-      const turn = await ProviderRouter.get("gemini", "supervisor").turn(
-        agent.system,
-        [
-          {
-            role: "user",
-            content: JSON.stringify(
-              chatModelContext({
-                messages,
-                summary: session.summary,
-              }),
-            ),
-          },
-        ],
-        [
-          {
-            name: "submit_intent",
-            description: "提交结构化意图。缺少交易参数时必须追问。",
-            inputSchema: z.toJSONSchema(intentPlanSchema),
-          },
-        ],
-        true,
-      );
-      const submitted = turn.calls.find((call) => call.name === "submit_intent");
-      plan = mergeIntent(submitted?.args, fallback);
-    } catch (error) {
-      const safe = publicError(error);
-      if (safe.code === "MODEL_UNCONFIGURED") throw error;
-      plan = fallback;
+    if (!shouldSkipModelClassify(run.content, fallback)) {
+      try {
+        const messages = await recentChatMessages(run.sessionId, run.userId, 8);
+        const agent = buildAgent("supervisor");
+        const turn = await ProviderRouter.get("gemini", "supervisor").turn(
+          agent.system,
+          [
+            {
+              role: "user",
+              content: JSON.stringify(
+                chatModelContext({
+                  messages,
+                  summary: session.summary,
+                }),
+              ),
+            },
+          ],
+          [
+            {
+              name: "submit_intent",
+              description: "提交结构化意图。缺少交易参数时必须追问。",
+              inputSchema: z.toJSONSchema(intentPlanSchema),
+            },
+          ],
+          true,
+        );
+        const submitted = turn.calls.find((call) => call.name === "submit_intent");
+        plan = mergeIntent(submitted?.args, fallback);
+      } catch (error) {
+        const safe = publicError(error);
+        if (safe.code === "MODEL_UNCONFIGURED") throw error;
+        plan = fallback;
+      }
     }
     if (isBareConfirmText(run.content))
       plan = heuristicIntent(run.content);
@@ -157,13 +161,16 @@ export async function startResearchFromChatStep(runId: string, plan: IntentPlan)
         : plan.taskKind === "backtest"
           ? "backtest"
           : "research";
+    const research = researchParamsFromChat(run.content, plan);
     const input = runInputSchema.parse({
       clientRequestId: run.id,
       sessionId: run.sessionId,
       mode,
       prompt: run.content,
-      symbol: plan.symbol ?? "BTCUSDT",
-      interval: plan.interval ?? "1d",
+      symbol: research.symbol,
+      interval: research.interval,
+      lookbackDays: research.lookbackDays,
+      debateRounds: research.debateRounds,
     });
     const created = await createRun(run.userId, input);
     await updateChatRun(runId, { researchRunId: created.run._id });

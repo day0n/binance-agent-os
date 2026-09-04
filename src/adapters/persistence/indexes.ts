@@ -9,6 +9,50 @@ export type IndexSpec = {
   };
 };
 
+export type ExistingIndex = {
+  name?: string;
+  key: Record<string, unknown>;
+  unique?: boolean;
+  sparse?: boolean;
+  expireAfterSeconds?: number;
+};
+
+export function indexKeysEqual(
+  expected: Record<string, 1 | -1>,
+  actual: Record<string, unknown>,
+) {
+  const keys = Object.keys(expected);
+  return (
+    keys.length === Object.keys(actual).length &&
+    keys.every((key) => expected[key] === actual[key])
+  );
+}
+
+export function existingIndexCovers(existing: ExistingIndex, spec: IndexSpec) {
+  if (!indexKeysEqual(spec.keys, existing.key)) return false;
+  if (!!existing.unique !== !!spec.options?.unique) return false;
+  if (
+    (existing.expireAfterSeconds ?? undefined) !==
+    (spec.options?.expireAfterSeconds ?? undefined)
+  )
+    return false;
+  return true;
+}
+
+export function isEquivalentIndexConflict(error: unknown) {
+  const code =
+    typeof error === "object" && error && "code" in error
+      ? Number(error.code)
+      : NaN;
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error && "message" in error
+        ? String(error.message)
+        : "";
+  return code === 85 && /different name/i.test(message);
+}
+
 export const schemaIndexes: IndexSpec[] = [
   {
     collection: "users",

@@ -59,7 +59,7 @@ export const runInputSchema = z
       .default("BTCUSDT"),
     interval: intervalSchema.default("1d"),
     lookbackDays: z.number().int().min(30).max(365).default(90),
-    debateRounds: z.number().int().min(1).max(2).default(1),
+    debateRounds: z.number().int().min(0).max(2).default(1),
     backtest: backtestConfigSchema.default(() =>
       backtestConfigSchema.parse({}),
     ),

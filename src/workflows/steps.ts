@@ -46,6 +46,10 @@ import {
   marketMetrics,
   parseCandles,
 } from "@/domain/finance/market";
+import {
+  composeMarketResearchFinding,
+  type MarketMetricsBrief,
+} from "@/domain/finance/research-brief";
 import { assessRisk, normalizePortfolio } from "@/domain/finance/risk";
 import { runBacktest } from "@/domain/finance/backtest";
 
@@ -224,13 +228,13 @@ export async function fetchDataStep(runId: string, request: DataRequest) {
     fail(e);
   }
 }
-fetchDataStep.maxRetries = 1;
+fetchDataStep.maxRetries = 2;
 
 export async function assembleContextStep(
   runId: string,
   initialId: string,
   dataIds: string[],
-  supervisorId: string,
+  supervisorId?: string,
 ) {
   "use step";
   try {
@@ -239,9 +243,10 @@ export async function assembleContextStep(
     const data = await Promise.all(
       dataIds.map((id) => getArtifact<DataArtifact>(id, run.ownerId)),
     );
-    context.findings.push(
-      await getArtifact<AgentFinding>(supervisorId, run.ownerId),
-    );
+    if (supervisorId)
+      context.findings.push(
+        await getArtifact<AgentFinding>(supervisorId, run.ownerId),
+      );
     context.evidence.push(...data.map((d) => d.evidence));
     const warnings: string[] = [];
     if (run.input.mode === "portfolio") {
@@ -293,8 +298,8 @@ export async function assembleContextStep(
         Date.parse(run.createdAt) - run.input.lookbackDays * 86400000;
       if (
         candles[0].openTime >
-          requestedStart + INTERVAL_MS[run.input.interval] ||
-        candles[0].openTime < requestedStart - INTERVAL_MS[run.input.interval]
+          requestedStart + 2 * INTERVAL_MS[run.input.interval] ||
+        candles[0].openTime < requestedStart - 2 * INTERVAL_MS[run.input.interval]
       )
         throw new AppError(
           "DATA_RANGE_MISMATCH",
@@ -380,6 +385,42 @@ export async function assembleContextStep(
     fail(e);
   }
 }
+export async function composeDeterministicFindingStep(
+  runId: string,
+  contextId: string,
+) {
+  "use step";
+  try {
+    const run = await assertActive(runId);
+    const context = await getArtifact<ResearchContext>(contextId, run.ownerId);
+    if (!context.market || !context.metrics)
+      throw new AppError("INSUFFICIENT_DATA", "没有可计算的市场指标。", 422);
+    const finding: AgentFinding = {
+      role: "report",
+      model: "deterministic-metrics",
+      ...composeMarketResearchFinding({
+        symbol: run.input.symbol,
+        interval: run.input.interval,
+        lookbackDays: run.input.lookbackDays,
+        asOf: context.asOf,
+        metrics: context.metrics as MarketMetricsBrief,
+        candles: context.market.candles,
+        evidenceIds: context.evidence
+          .filter((item) => item.source !== "user")
+          .map((item) => item.id),
+      }),
+    };
+    await emit(runId, "report:deterministic", {
+      type: "agent.completed",
+      role: "report",
+      message: "已根据已收盘 K 线生成可核验研究简报。",
+    });
+    return await putArtifact(runId, "finding:report:0", "finding", finding);
+  } catch (e) {
+    fail(e);
+  }
+}
+
 export async function mergeFindingsStep(
   runId: string,
   contextId: string,

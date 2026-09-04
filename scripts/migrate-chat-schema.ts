@@ -1,5 +1,9 @@
 import { MongoClient } from "mongodb";
-import { schemaIndexes } from "../src/adapters/persistence/indexes";
+import {
+  existingIndexCovers,
+  isEquivalentIndexConflict,
+  schemaIndexes,
+} from "../src/adapters/persistence/indexes";
 
 const apply = process.argv.includes("--apply");
 const dryRun = process.argv.includes("--dry-run") || !apply;
@@ -41,10 +45,17 @@ console.log(
 );
 
 if (!dryRun) {
-  for (const index of schemaIndexes)
-    await db.collection(index.collection).createIndex(index.keys, {
-      ...index.options,
-    });
+  for (const index of schemaIndexes) {
+    const existing = await db.collection(index.collection).indexes();
+    if (existing.some((item) => existingIndexCovers(item, index))) continue;
+    try {
+      await db.collection(index.collection).createIndex(index.keys, {
+        ...index.options,
+      });
+    } catch (error) {
+      if (!isEquivalentIndexConflict(error)) throw error;
+    }
+  }
   await db.collection<{ _id: string; version: number; appliedAt: Date; indexCount: number }>("schema_meta").updateOne(
     { _id: "chat_schema" },
     {

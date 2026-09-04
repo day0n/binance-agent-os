@@ -2,6 +2,7 @@ import type { AgentRole } from "@/domain/contracts";
 import {
   advanceAgentStep,
   assembleContextStep,
+  composeDeterministicFindingStep,
   executeAgentToolStep,
   failureStep,
   fetchDataStep,
@@ -53,7 +54,6 @@ async function runAgent(
 
 export async function executeResearchGraph(runId: string) {
   const plan = await initializeStep(runId);
-  const supervisorId = await runAgent(runId, "supervisor", plan.contextId);
   const dataIds: string[] = [];
   for (let i = 0; i < plan.requests.length; i += 2)
     dataIds.push(
@@ -63,12 +63,17 @@ export async function executeResearchGraph(runId: string) {
           .map((request) => fetchDataStep(runId, request)),
       )),
     );
-  let contextId = await assembleContextStep(
-    runId,
-    plan.contextId,
-    dataIds,
-    supervisorId,
-  );
+  let contextId = await assembleContextStep(runId, plan.contextId, dataIds);
+  if (plan.mode === "research") {
+    const findingId = await composeDeterministicFindingStep(runId, contextId);
+    contextId = await mergeFindingsStep(
+      runId,
+      contextId,
+      [findingId],
+      "report",
+    );
+    return await finalizeStep(runId, contextId, findingId);
+  }
   const specialistIds = await Promise.all(
     plan.roles.map((role) => runAgent(runId, role, contextId)),
   );

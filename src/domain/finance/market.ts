@@ -139,9 +139,9 @@ export function marketMetrics(candles: Candle[], interval: string) {
   const { std } = stats(returns);
   return {
     lastClose: last,
-    sma10: sma(prices, 10).at(-1),
-    sma30: sma(prices, 30).at(-1),
-    rsi14: rsi(prices, 14).at(-1),
+    sma10: sma(prices, 10).at(-1) ?? null,
+    sma30: sma(prices, 30).at(-1) ?? null,
+    rsi14: rsi(prices, 14).at(-1) ?? null,
     intervalReturn: last / prices[0] - 1,
     annualizedVolatility:
       std * Math.sqrt((365 * 86400000) / INTERVAL_MS[interval]),

@@ -18,7 +18,8 @@ Snapshot: 2026-09-04。分层记录真实接口与尚未执行的项目。
 
 ## 网站实际使用的链路
 
-- 公共 REST：行情、K 线、深度。
+- 公共 REST：行情、K 线、深度；`api.binance.com` 被地域拦截时回退官方 `data-api.binance.vision`。
+- 聊天市场研究：已收盘 K 线 + 确定性指标生成简报与证据；不编造模拟行情。回测仍走多 Agent 图。
 - 本地用户名密码会话。
 - API Key 信封 + 计划中的 Cloud Run Executor。
 - **不**把网站显示成“MCP 已连接”。
