@@ -1,0 +1,24 @@
+{
+  "name": "binance-executor",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "build": "tsc --noEmit",
+    "start": "node --import tsx src/server.ts"
+  },
+  "dependencies": {
+    "@binance-agent-os/executor-contracts": "workspace:*",
+    "@google-cloud/kms": "5.4.0",
+    "decimal.js": "10.6.0",
+    "google-auth-library": "11.0.2",
+    "tsx": "4.21.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3",
+    "vitest": "4.0.18"
+  }
+}
