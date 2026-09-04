@@ -2,6 +2,7 @@ import { AppError } from "@/domain/errors";
 import { config } from "@/platform/config";
 import { executorIdToken } from "@/platform/gcp-auth";
 import { getConnection } from "@/adapters/persistence/connection-store";
+import { classifyExecutorHttp } from "@/application/actions/proposal";
 import type { Capability } from "./mcp-policy";
 
 export async function executorRequest<T>(
@@ -42,6 +43,62 @@ export async function executorRequest<T>(
       response.status === 401 || response.status === 403 ? response.status : 502,
     );
   return (await response.json()) as T;
+}
+
+export async function executorExecute(input: {
+  userId: string;
+  actionId: string;
+  proposalHash: string;
+  kind: string;
+  environment: "spot_testnet" | "production";
+  connectionId: string;
+  payload: Record<string, string>;
+  clientOrderId?: string;
+}) {
+  const connection = await getConnection(input.connectionId, input.userId);
+  if (connection.role !== "trade")
+    throw new AppError("CONNECTION_ROLE", "执行需要交易角色连接。", 403);
+  const c = config();
+  if (!c.EXECUTOR_URL)
+    throw new AppError(
+      "EXECUTOR_UNCONFIGURED",
+      "执行器尚未配置，不能读取账户或发送交易。",
+      503,
+    );
+  const token = await executorIdToken(c.EXECUTOR_URL);
+  let response: Response;
+  try {
+    response = await fetch(new URL("/v1/execute", c.EXECUTOR_URL), {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        ...input,
+        envelope: connection.envelope,
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+  } catch {
+    throw new AppError(
+      "EXECUTOR_UNAVAILABLE",
+      "执行器暂时不可用，未使用模拟结果。",
+      502,
+      true,
+    );
+  }
+  const data = (await response.json().catch(() => ({}))) as {
+    error?: string;
+  };
+  const status = classifyExecutorHttp(response.status, data);
+  if (status === "failed")
+    throw new AppError(
+      "EXECUTOR_UNAVAILABLE",
+      "执行器拒绝请求，未使用模拟结果。",
+      response.status === 401 || response.status === 403 ? response.status : 502,
+    );
+  return { status, data };
 }
 
 export async function executorRead(

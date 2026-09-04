@@ -88,3 +88,25 @@ export function validateFinding(value: unknown, validEvidence: Set<string>) {
     );
   return parsed.data;
 }
+
+export function acceptFindingOrRepair(
+  value: unknown,
+  validEvidence: Set<string>,
+  repairUsed: boolean,
+) {
+  try {
+    return { finding: validateFinding(value, validEvidence) };
+  } catch (error) {
+    if (
+      error instanceof AppError &&
+      (error.code === "FINDING_INVALID" || error.code === "EVIDENCE_INVALID") &&
+      !repairUsed
+    )
+      return { repair: true as const };
+    throw new AppError(
+      "FINDING_UNRECOVERABLE",
+      "模型输出结构连续两次无效，本轮已明确结束。",
+      502,
+    );
+  }
+}

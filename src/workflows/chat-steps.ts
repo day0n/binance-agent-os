@@ -4,7 +4,6 @@ import { AppError, publicError } from "@/domain/errors";
 import { intentPlanSchema, isBareConfirmText, type IntentPlan } from "@/domain/chat";
 import { actionDraftSchema } from "@/domain/actions";
 import { runInputSchema } from "@/domain/contracts";
-import { sha256 } from "@/platform/crypto";
 import { config } from "@/platform/config";
 import { ProviderRouter } from "@/adapters/llm/providers";
 import { buildAgent } from "@/application/agents/blueprints";
@@ -30,10 +29,24 @@ import {
   updateChatRun,
   updateSessionSummary,
 } from "@/adapters/persistence/chat-store";
-import { insertAction } from "@/adapters/persistence/action-store";
+import {
+  insertAction,
+  reserveDailyQuota,
+  getDailyLedger,
+  settleDailyQuota,
+} from "@/adapters/persistence/action-store";
+import { findConnection } from "@/adapters/persistence/connection-store";
+import { fetchBookTicker } from "@/adapters/binance/public-rest";
 import { createRun, getArtifact } from "@/adapters/persistence/store";
 import type { AnalysisReport } from "@/domain/contracts";
 import { proposalTtlMs } from "@/domain/actions";
+import { quotaForKind } from "@/application/finance/action-policy";
+import {
+  hashProposal,
+  inferEnvironment,
+  newClientOrderId,
+  orderTypeOf,
+} from "@/application/actions/proposal";
 
 function fail(error: unknown): never {
   const safe = publicError(error);
@@ -225,62 +238,98 @@ export async function proposeActionStep(runId: string, plan: IntentPlan) {
       if (safe.code === "MODEL_UNCONFIGURED") throw error;
     }
     const missing = missingActionFields(draft);
-    if (missing.length || plan.needsClarification)
+    if (missing.length)
       return writeAssistantReply(
         runId,
-        `还不能生成精确预览，缺少：${(missing.length ? missing : plan.missingFields).join("、")}。我不会猜测这些参数。`,
+        `还不能生成精确预览，缺少：${missing.join("、")}。我不会猜测这些参数。`,
       );
     const notional = assertDraftLimits(draft, config().ACTION_MAX_USDT);
-    const expiresAt = new Date(Date.now() + proposalTtlMs(draft.kind));
-    const proposal = {
-      environment: "spot_testnet" as const,
-      apiKeyFingerprint: "unverified",
-      kind: draft.kind,
-      symbol: draft.symbol,
-      side: draft.side,
-      orderType:
-        draft.kind === "spot.limitOrder"
-          ? ("LIMIT" as const)
-          : draft.kind === "spot.marketOrder"
-            ? ("MARKET" as const)
-            : undefined,
-      timeInForce: draft.kind === "spot.limitOrder" ? ("GTC" as const) : undefined,
-      quantity: draft.quantity,
-      quoteOrderQty: draft.quoteOrderQty,
-      price: draft.price,
-      estimatedNotionalUsdt: notional,
-      feeAssumption: "按公开费率假设，成交后以交易所实际扣费为准",
-      actionQuotaUsdt: notional,
-      dailyUsedUsdt: "0",
-      dailyReservedUsdt: notional,
-      dailyLimitUsdt: String(config().ACTION_DAILY_MAX_USDT),
-      expiresAt: expiresAt.toISOString(),
-      irreversibleWarning:
-        "确认后不可撤销该网络请求；成功成交或划转计入当日额度，后续撤单不返还额度。",
-    };
-    const proposalHash = sha256(proposal);
-    const action = await insertAction({
-      userId: run.userId,
-      sessionId: run.sessionId,
-      runId,
-      kind: draft.kind,
-      draft,
-      proposal,
-      proposalHash,
-      reservedUsdt: draft.kind === "spot.cancelOrder" ? "0" : notional,
-      expiresAt,
-    });
-    await updateChatRun(runId, { actionId: action.id });
-    await appendSessionEvent(run.sessionId, run.userId, "action.proposed", {
-      actionId: action.id,
-      proposalHash,
-      expiresAt: expiresAt.toISOString(),
-    });
-    return writeAssistantReply(
-      runId,
-      "已生成精确动作预览。请在动作卡核对后输入当前账号密码确认；聊天文字不能执行。",
-      { actionId: action.id },
-    );
+    const environment = inferEnvironment(run.content);
+    const connection = await findConnection(run.userId, environment, "trade");
+    if (!connection)
+      return writeAssistantReply(
+        runId,
+        `还没有 ${environment} 交易 API Key。请先在「连接」里用密码保存交易信封，网站不会假装 MCP 已连接。`,
+      );
+    const quota = quotaForKind(draft.kind, notional);
+    let reserved = false;
+    try {
+      await reserveDailyQuota(
+        run.userId,
+        quota,
+        String(config().ACTION_DAILY_MAX_USDT),
+      );
+      reserved = true;
+      const ledger = await getDailyLedger(run.userId);
+      let marketPrice: string | undefined;
+      let marketPriceAt: string | undefined;
+      if (draft.symbol) {
+        const book = (await fetchBookTicker(draft.symbol)) as {
+          bidPrice?: string;
+          askPrice?: string;
+        };
+        marketPrice =
+          draft.side === "SELL" ? book.bidPrice : book.askPrice ?? book.bidPrice;
+        marketPriceAt = new Date().toISOString();
+      }
+      const expiresAt = new Date(Date.now() + proposalTtlMs(draft.kind));
+      const proposal = {
+        environment,
+        apiKeyFingerprint: connection.apiKeyFingerprint,
+        kind: draft.kind,
+        symbol: draft.symbol,
+        side: draft.side,
+        orderType: orderTypeOf(draft.kind),
+        timeInForce: draft.kind === "spot.limitOrder" ? ("GTC" as const) : undefined,
+        quantity: draft.quantity,
+        quoteOrderQty: draft.quoteOrderQty,
+        price: draft.price,
+        estimatedNotionalUsdt: notional,
+        marketPrice,
+        marketPriceAt,
+        feeAssumption: "按公开费率假设，成交后以交易所实际扣费为准",
+        actionQuotaUsdt: quota,
+        dailyUsedUsdt: ledger.usedUsdt,
+        dailyReservedUsdt: ledger.reservedUsdt,
+        dailyLimitUsdt: String(config().ACTION_DAILY_MAX_USDT),
+        expiresAt: expiresAt.toISOString(),
+        irreversibleWarning:
+          "确认后不可撤销该网络请求；成功成交或划转计入当日额度，后续撤单不返还额度。",
+      };
+      const proposalHash = hashProposal(proposal);
+      const actionId = crypto.randomUUID();
+      const action = await insertAction({
+        id: actionId,
+        userId: run.userId,
+        sessionId: run.sessionId,
+        runId,
+        kind: draft.kind,
+        draft,
+        proposal,
+        proposalHash,
+        clientOrderId: newClientOrderId(actionId),
+        environment,
+        connectionId: connection.id,
+        reservedUsdt: quota,
+        expiresAt,
+      });
+      reserved = false;
+      await updateChatRun(runId, { actionId: action.id });
+      await appendSessionEvent(run.sessionId, run.userId, "action.proposed", {
+        actionId: action.id,
+        proposalHash,
+        expiresAt: expiresAt.toISOString(),
+      });
+      return writeAssistantReply(
+        runId,
+        "已生成精确动作预览。请在动作卡核对后输入当前账号密码确认；聊天文字不能执行。",
+        { actionId: action.id },
+      );
+    } catch (error) {
+      if (reserved)
+        await settleDailyQuota(run.userId, quota, false).catch(() => undefined);
+      throw error;
+    }
   } catch (error) {
     fail(error);
   }

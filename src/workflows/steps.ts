@@ -35,8 +35,8 @@ import {
 } from "@/adapters/persistence/store";
 import { buildAgent, planRoles } from "@/application/agents/blueprints";
 import {
+  acceptFindingOrRepair,
   compactContext,
-  validateFinding,
   type ResearchContext,
 } from "@/application/research-context";
 import { ToolCatalog } from "@/application/tools/catalog";
@@ -520,21 +520,42 @@ export async function executeAgentToolStep(
             "请在其他工具返回后单独提交最终结果。",
             422,
           );
-        const finding: AgentFinding = {
-          ...validateFinding(
-            call.args,
-            new Set(context.evidence.map((e) => e.id)),
-          ),
-          role: state.role,
-          model: turn.model,
-        };
-        output = {
-          callId: call.id,
-          name: call.name,
-          result: { accepted: true },
-          finding,
-        };
+        const repairKey = `schema-repair:${state.role}:${state.pass}`;
+        const accepted = acceptFindingOrRepair(
+          call.args,
+          new Set(context.evidence.map((e) => e.id)),
+          Boolean(await cachedArtifact(runId, repairKey)),
+        );
+        if ("repair" in accepted) {
+          await putArtifact(runId, repairKey, "schema_repair", { used: true });
+          output = {
+            callId: call.id,
+            name: call.name,
+            result: {
+              error: publicError(
+                new AppError(
+                  "FINDING_INVALID",
+                  "输出结构无效，仅允许再提交一次。",
+                  422,
+                ),
+              ),
+            },
+          };
+        } else {
+          const finding: AgentFinding = {
+            ...accepted.finding,
+            role: state.role,
+            model: turn.model,
+          };
+          output = {
+            callId: call.id,
+            name: call.name,
+            result: { accepted: true },
+            finding,
+          };
+        }
       } catch (e) {
+        if (e instanceof AppError && e.code === "FINDING_UNRECOVERABLE") throw e;
         output = {
           callId: call.id,
           name: call.name,
@@ -670,7 +691,7 @@ export async function finalizeStep(
         ]),
       ],
       disclaimer:
-        "独立研究工具，非币安官方产品。仅供研究与教育，不构成投资建议；历史模拟不能代表实盘或未来收益。本应用不执行交易。",
+        "独立研究工具，非币安官方产品。仅供研究与教育，不构成投资建议；历史模拟不能代表实盘或未来收益。交易与划转必须通过动作卡并重新输入当前账号密码确认。",
     };
     await finishRun(runId, report);
     return { runId, status: "completed" };

@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import Decimal from "decimal.js";
 import type {
   ActionKind,
   ActionRecord,
@@ -8,6 +7,10 @@ import type {
   ActionProposalPreview,
 } from "@/domain/actions";
 import { AppError } from "@/domain/errors";
+import {
+  nextReservedUsdt,
+  nextSettledLedger,
+} from "@/application/finance/daily-quota";
 import { database } from "./mongo";
 
 export type ActionDoc = Omit<ActionRecord, "id"> & { _id: string };
@@ -33,6 +36,7 @@ function asAction(doc: ActionDoc): ActionRecord {
 }
 
 export async function insertAction(input: {
+  id?: string;
   userId: string;
   sessionId: string;
   runId: string;
@@ -47,12 +51,15 @@ export async function insertAction(input: {
   expiresAt: Date;
 }) {
   const now = new Date();
+  const id = input.id ?? randomUUID();
+  const { id: _ignored, ...fields } = input;
+  void _ignored;
   const doc: ActionDoc = {
-    _id: randomUUID(),
+    _id: id,
     status: "awaiting_confirmation",
     createdAt: now,
     updatedAt: now,
-    ...input,
+    ...fields,
   };
   await (await database()).collection<ActionDoc>("actions").insertOne(doc);
   return asAction(doc);
@@ -165,19 +172,8 @@ export async function reserveDailyQuota(
   dailyLimit: string,
 ) {
   const date = utcDate();
-  const db = await database();
-  const current = await getDailyLedger(userId, date);
-  const used = new Decimal(current.usedUsdt);
-  const reserved = new Decimal(current.reservedUsdt);
-  const add = new Decimal(amount);
-  const limit = new Decimal(dailyLimit);
-  if (used.plus(reserved).plus(add).gt(limit))
-    throw new AppError(
-      "DAILY_QUOTA",
-      "已超过每个 UTC 自然日的执行额度。",
-      429,
-    );
-  await db.collection<DailyLedgerDoc>("daily_action_ledger").updateOne(
+  const col = (await database()).collection<DailyLedgerDoc>("daily_action_ledger");
+  await col.updateOne(
     { userId, utcDate: date },
     {
       $setOnInsert: {
@@ -185,13 +181,31 @@ export async function reserveDailyQuota(
         userId,
         utcDate: date,
         usedUsdt: "0",
-      },
-      $set: {
-        reservedUsdt: reserved.plus(add).toFixed(8),
+        reservedUsdt: "0",
       },
     },
     { upsert: true },
   );
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const current = await getDailyLedger(userId, date);
+    const nextReserved = nextReservedUsdt(
+      current.usedUsdt,
+      current.reservedUsdt,
+      amount,
+      dailyLimit,
+    );
+    const result = await col.updateOne(
+      {
+        userId,
+        utcDate: date,
+        usedUsdt: current.usedUsdt,
+        reservedUsdt: current.reservedUsdt,
+      },
+      { $set: { reservedUsdt: nextReserved } },
+    );
+    if (result.modifiedCount === 1) return nextReserved;
+  }
+  throw new AppError("DAILY_QUOTA", "额度预留冲突，请重试。", 409);
 }
 
 export async function settleDailyQuota(
@@ -200,25 +214,25 @@ export async function settleDailyQuota(
   consume: boolean,
 ) {
   const date = utcDate();
-  const current = await getDailyLedger(userId, date);
-  const nextReserved = Decimal.max(
-    0,
-    new Decimal(current.reservedUsdt).minus(reserved),
-  );
-  const nextUsed = consume
-    ? new Decimal(current.usedUsdt).plus(reserved)
-    : new Decimal(current.usedUsdt);
-  await (
-    await database()
-  )
-    .collection<DailyLedgerDoc>("daily_action_ledger")
-    .updateOne(
-      { userId, utcDate: date },
-      {
-        $set: {
-          reservedUsdt: nextReserved.toFixed(8),
-          usedUsdt: nextUsed.toFixed(8),
-        },
-      },
+  const col = (await database()).collection<DailyLedgerDoc>("daily_action_ledger");
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const current = await getDailyLedger(userId, date);
+    const next = nextSettledLedger(
+      current.usedUsdt,
+      current.reservedUsdt,
+      reserved,
+      consume,
     );
+    const result = await col.updateOne(
+      {
+        userId,
+        utcDate: date,
+        usedUsdt: current.usedUsdt,
+        reservedUsdt: current.reservedUsdt,
+      },
+      { $set: next },
+    );
+    if (result.modifiedCount === 1 || result.matchedCount === 1) return next;
+  }
+  throw new AppError("DAILY_QUOTA", "额度结算冲突，请人工核对。", 409);
 }
