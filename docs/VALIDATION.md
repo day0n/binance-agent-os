@@ -1,64 +1,55 @@
 # Validation record
 
-Snapshot: 2026-09-04. This is a real MCP integration checkpoint, not acceptance of all three production web workflows.
+Snapshot: 2026-09-04。分层记录真实接口与尚未执行的项目。
+**构建成功、部署成功或模拟测试不等于真实交易已跑通。**
 
-## Verified
+## 已真实通过
 
-| Layer                       | Evidence                                                                                                  | Result                                                                                   |
-| --------------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| Static checks               | pnpm lint; pnpm typecheck                                                                                 | Pass                                                                                     |
-| Unit tests                  | Vitest                                                                                                    | 53 passed                                                                                |
-| Production build            | pnpm build; Vercel Node 24 build                                                                          | Pass; 14 durable steps, 1 workflow                                                       |
-| Real Gemini single turn     | Vertex AI service account; gemini-3.8-flash; HIGH                                                         | Pass; actual provider usage returned                                                     |
-| Real Gemini tool round trip | Two model turns, two read-only calls, native signed content replay                                        | Pass; tool call IDs paired independently                                                 |
-| Optional providers          | Earlier minimal OpenAI and Anthropic calls from local opt-in credentials                                  | Pass locally; neither configured in current production                                   |
-| Deployment boundary         | Incorrect team project deleted before personal-space redeployment; old project inspect returned not found | Pass; other projects untouched                                                           |
-| Public site                 | https://binance-agent-os-alpha.vercel.app                                                                 | HTTP reachable; production deployment READY                                              |
-| Bootstrap                   | /api/bootstrap                                                                                            | HTTP 200; Gemini configured, HIGH; Binance web OAuth unsupported; no mapped capabilities |
-| OAuth client metadata       | /.well-known/oauth-client.json                                                                            | HTTP 200; HTTPS callback uses the public production origin                               |
-| MongoDB / Redis             | Production /api/health/ready performs actual PING                                                         | Pass for both; Redis is an isolated personal-scope Upstash resource                      |
-| Binance Codex OAuth         | Official `codex` client ID and Agentic MCP endpoint                                                       | Pass; user completed authorization; token was not inspected or exported                  |
-| MCP discovery               | Real `tool_search`                                                                                        | Pass; 50 tools reported; exact schemas found for ticker, klines and spot account         |
-| MCP public ticker           | `spot.ticker24hr`, BTCUSDT, FULL                                                                          | Pass; 81,176.55 USDT and +4.867% at the observed response                                |
-| MCP K lines                 | `spot.klines`, BTCUSDT, 1d, limit 60                                                                      | Pass; 60 rows returned, 59 closed rows accepted by the domain parser                     |
-| Real-data calculation       | Existing market parser and buy-hold backtest over those 59 closed rows                                    | Pass; final equity 12,058.18 from 10,000, 20.582% return, 5.608% max drawdown            |
-| Browser shell               | Production market, portfolio, backtest navigation; settings; model configuration                          | Pass for unauthenticated shell, not financial execution                                  |
-| Responsive UI               | Browser 390 x 844 viewport; navigation open/close; no horizontal overflow                                 | Pass for tested empty workspace                                                          |
+| 层 | 证据 | 结果 |
+| --- | --- | --- |
+| 静态检查 | `pnpm lint`、`pnpm typecheck` | 本分支通过 |
+| 单元测试 | Vitest（认证、额度、提案指纹、公共 REST、回测、UI） | 本分支通过 |
+| Executor 单测 | `pnpm --filter binance-executor test` | 允许列表、签名、划转不重试 |
+| 生产构建 | `pnpm build` | Chat / auth / actions / connections 路由已生成 |
+| 真实 Gemini | Vertex `gemini-3.8-flash` / HIGH | 此前本地与配置检查已通过；不是本轮新的生产 workflow 验收 |
+| 官方 Agentic MCP（Codex） | 受支持客户端 OAuth + `tool_search` + ticker/klines | 此前真实通过；令牌不得导入网站 |
+| 确定性回测 | 真实已收盘 K 线 + 手续费/滑点 | 此前 Codex 数据路径通过 |
+| 部署边界脚本 | `assert-deploy-target` | 只允许个人 Vercel 项目 |
 
-The model smoke tool uses deterministic non-financial fixture inputs to check the protocol. The separate MCP rows above are real Binance public-market calls. The backtest used 10 bps fees, 5 bps slippage and next-open execution. Thought contents, credentials, OAuth values, and account balances are not included in this record.
+## 网站实际使用的链路
 
-## Blocking production-web limitation
+- 公共 REST：行情、K 线、深度。
+- 本地用户名密码会话。
+- API Key 信封 + 计划中的 Cloud Run Executor。
+- **不**把网站显示成“MCP 已连接”。
 
-- Binance currently rejects an arbitrary self-built website as an Agentic OAuth client with error 3346001. The supported Codex connection works, but its OAuth token must not be exported into the Vercel website.
-- The website therefore disables financial run submission and returns a clear error from its legacy connect endpoint. It does not spoof a supported client or substitute mock data.
-- A real MCP market read and deterministic local backtest have passed. Market research with Gemini, spot-account review, and all three durable production web workflows have **not** completed end to end.
+## 自建网站 OAuth
 
-## Not yet verified
+Binance 仍拒绝任意自建网站 Agent OAuth（错误 3346001）。
+受支持的 Codex 连接有效，但其 OAuth token 不得导出到 Vercel 网站。
 
-- A Binance-supported registration or documented OAuth route for this self-built Web Agent.
-- Web-client OAuth cancel/expiry and insufficient-permission responses after that support exists.
-- Read-only binding hashes, market pagination, tool rate limiting, and missing-market responses in the production workflow.
-- End-to-end run completion, page refresh during a live run, SSE reconnection, workflow recovery/retry, duplicate request behavior, cancellation and cross-user access against persisted runs.
-- Production Vertex AI requests from a durable workflow. The successful real model smoke was local using the same approved account/model; bootstrap only verifies configuration presence.
-- An automated browser end-to-end suite; manual browser checks do not substitute for it.
-- Preview environment credentials and OAuth. Only production is configured.
+## 自动化测试覆盖
 
-## Implementation limitations
+- 用户名规范化、密码边界、scrypt、锁定阈值、模糊登录错误。
+- Origin、Cookie 名与寿命、公开用户对象不含哈希。
+- 聊天“确认”不进入 action；requestId 校验；SSE 游标；上下文截断。
+- 5 / 20 USDT 额度、市价漂移 1%、proposalHash 篡改、划转 uncertain。
+- 公共 REST 拒绝账户/提现路径；Vercel 客户端不解密信封。
+- Playwright：未登录发送会打开注册/登录；移动端对话/研究页签。
 
-- Roles have separate blueprints, read-only tool sets and budgets, but share a validated finding contract rather than fully distinct per-role result schemas.
-- Explicit risk settings currently apply to the next request; a persistent user-preference UI and full chat-message history API are not implemented.
-- Run history persists in MongoDB. Reloading the page requires selecting a previous run; the active run is not automatically restored from a URL.
-- Provider token counters limit scheduling, but cannot guarantee an already-sent request consumes no extra tokens or that a retried external request is billed exactly once.
+这些是自动测试，不是 Testnet 或 Production canary。
 
-## Acceptance after the blockers are resolved
+## 尚未执行 / 必须人工在场
 
-1. Obtain an officially supported OAuth route for this Web Agent, without impersonating another client.
-2. Bind only reviewed read operations and rerun the production readiness/integration suite.
-3. Run all three workflows, compare report metrics to immutable source and calculation snapshots, and record redacted run IDs and timestamps.
-4. Exercise the unverified failure, isolation, recovery and browser scenarios above before describing the project as fully accepted.
+| 项 | 状态 |
+| --- | --- |
+| Cloud Run 私有访问、WIF、固定 NAT IP、KMS 仅在 Executor 解密 | 代码与 Terraform 已写，基础设施未在本轮验收 |
+| Spot Testnet：账户读取、市价、限价、撤单、client ID 幂等 | 未执行 |
+| Production canary：≤5 USDT 买单、1 USDT 双向划转 | 未执行；写开关保持关闭 |
+| 生产网站端到端 Gemini HIGH workflow | 未在本轮重新跑 |
+| 官方网站 OAuth | 仍不受支持 |
 
-## Binance-style UI revision
+## 历史只读验收（2026-09-04 之前）
 
-The feature/binance-ui revision replaces the sidebar shell with the reference-aligned top navigation, overview cards, tabs, custom selectors, history tables and native dialogs. Local browser verification covered dropdown keyboard selection, ETH example consistency, 320/390/768px layouts, light/dark mode, risk switch, history filtering and FAQ disclosure. Tab/Shift+Tab focus wrap, Escape dismissal and trigger focus restoration were tested after correcting a native-dialog focus-boundary issue. See [UI design record](UI.md) for exact type tokens, reference scope and contrast ratios.
-
-The UI tests cover markup/semantics, deferred chart import and explicit color-contrast pairs. They are not a replacement for real financial workflow acceptance or a full automated browser suite.
+此前生产站点、bootstrap、Mongo/Redis PING、Codex MCP ticker/klines 和本地回测的记录仍然有效，
+见本文件旧版描述：那是 MCP 只读检查点，不是三个生产 Web 交易流程的验收。
