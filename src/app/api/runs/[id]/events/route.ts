@@ -1,6 +1,6 @@
 import { eventsAfter, getRun } from "@/adapters/persistence/store";
 import { terminalStatuses } from "@/domain/contracts";
-import { owner, apiError } from "@/adapters/http/session";
+import { requireUser, apiError } from "@/adapters/http/session";
 import { AppError } from "@/domain/errors";
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -10,7 +10,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await owner();
+    const { userId: user } = await requireUser();
     const id = (await params).id;
     const first = await getRun(id, user);
     let cursor = Number(

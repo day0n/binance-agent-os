@@ -29,7 +29,16 @@ import {
 import { runInputSchema, type AnalysisReport } from "../src/domain/contracts";
 import { AppError, publicError } from "../src/domain/errors";
 import { config } from "../src/platform/config";
-import { encrypt, sha256, signSession } from "../src/platform/crypto";
+import { AUTH_COOKIE } from "../src/domain/auth";
+import { hashPassword } from "../src/application/auth/password";
+import { createAuthSession } from "../src/adapters/persistence/auth-store";
+import {
+  encrypt,
+  sha256,
+  deriveCsrfToken,
+  hashToken,
+  randomToken,
+} from "../src/platform/crypto";
 
 const c = config();
 if (
@@ -44,24 +53,63 @@ const own = randomUUID(),
   foreign = randomUUID();
 const ownedIds = [own, foreign];
 const origin = new URL(c.APP_ORIGIN).origin;
-const cookie = (id: string) =>
-  "bao_session=" + signSession(id, Date.now() + 600000);
+const tokens = new Map<string, { cookie: string; csrf: string }>();
+async function seedAuth(userId: string, username: string) {
+  const hashed = await hashPassword(
+    "integration-pass-12",
+    c.AUTH_PEPPER,
+  );
+  await (
+    await database()
+  )
+    .collection<{ _id: string }>("users")
+    .updateOne(
+      { _id: userId },
+      {
+        $setOnInsert: {
+          usernameCanonical: username,
+          usernameDisplay: username,
+          ...hashed,
+          status: "active",
+          failedLoginCount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      },
+      { upsert: true },
+    );
+  const sessionToken = randomToken(32);
+  const csrf = deriveCsrfToken(sessionToken);
+  await createAuthSession({
+    userId,
+    tokenHash: hashToken(sessionToken),
+    csrfTokenHash: hashToken(csrf),
+    expiresAt: new Date(Date.now() + 600000),
+  });
+  tokens.set(userId, {
+    cookie: `${AUTH_COOKIE}=${sessionToken}`,
+    csrf,
+  });
+}
 const request = async (
   path: string,
   id = own,
   body?: unknown,
   extra: Record<string, string> = {},
-) =>
-  fetch(origin + path, {
+) => {
+  const auth = tokens.get(id);
+  return fetch(origin + path, {
     method: body === undefined ? "GET" : "POST",
     headers: {
-      cookie: cookie(id),
+      cookie: auth?.cookie ?? "",
       origin,
       "content-type": "application/json",
+      ...(body === undefined ? {} : { "x-csrf-token": auth?.csrf ?? "" }),
       ...extra,
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
+};
 const input = () =>
   runInputSchema.parse({
     clientRequestId: randomUUID(),
@@ -80,6 +128,8 @@ try {
     cache = await redis();
   assert.equal((await db.command({ ping: 1 })).ok, 1);
   assert.equal(await cache.ping(), "PONG");
+  await seedAuth(own, "int_own_user");
+  await seedAuth(foreign, "int_foreign_user");
   passed("real MongoDB and Redis / isolated development namespace");
 
   const rejected = input();
@@ -359,6 +409,12 @@ try {
       "oauth_states",
     ])
       await db.collection(name).deleteMany({ ownerId: { $in: ownedIds } });
+    await db
+      .collection<{ _id: string }>("users")
+      .deleteMany({ _id: { $in: ownedIds } });
+    await db
+      .collection<{ userId: string }>("auth_sessions")
+      .deleteMany({ userId: { $in: ownedIds } });
     await db
       .collection<{ _id: string }>("connections")
       .deleteMany({ _id: { $in: ownedIds } });

@@ -5,13 +5,13 @@ import {
 } from "@/adapters/persistence/store";
 import { terminalStatuses, type AnalysisReport } from "@/domain/contracts";
 import { AppError } from "@/domain/errors";
-import { owner, apiError } from "@/adapters/http/session";
+import { requireUser, apiError } from "@/adapters/http/session";
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    const user = await owner();
+    const { userId: user } = await requireUser();
     let run = await getRun((await params).id, user);
     if (
       !terminalStatuses.includes(run.status) &&

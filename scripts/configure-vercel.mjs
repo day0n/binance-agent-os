@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
+await import(new URL("./assert-deploy-target.mjs", import.meta.url).href);
 
 const [reference, origin, environment = "production", vertexReference] =
   process.argv.slice(2);
@@ -22,10 +23,13 @@ if (!expectedOrg || !scope || project.orgId !== expectedOrg)
   throw new Error(
     "Set and verify VERCEL_EXPECTED_ORG_ID and VERCEL_DEPLOY_SCOPE before sending credentials.",
   );
+if (/opencreator/i.test(reference) || /opencreator/i.test(vertexReference ?? ""))
+  throw new Error("Refusing to copy environment values from an OpenCreator project.");
 const source = parseEnv(readFileSync(reference, "utf8"));
 const values = {
   APP_ORIGIN: origin,
   APP_SECRET: randomBytes(32).toString("hex"),
+  AUTH_PEPPER: randomBytes(32).toString("hex"),
   APP_ENV: environment,
   MONGODB_DB:
     environment === "production" ? "binance_agent_os" : "binance_agent_os_dev",
@@ -33,6 +37,10 @@ const values = {
   GEMINI_THINKING_LEVEL: "HIGH",
   GOOGLE_CLOUD_LOCATION: "global",
   BINANCE_TOOL_BINDINGS_JSON: "{}",
+  BINANCE_WRITES_ENABLED: "false",
+  BINANCE_PRODUCTION_WRITES_ENABLED: "false",
+  ACTION_MAX_USDT: "5",
+  ACTION_DAILY_MAX_USDT: "20",
 };
 for (const key of ["MONGODB_URI", "REDIS_URL"])
   if (source[key]) values[key] = source[key];

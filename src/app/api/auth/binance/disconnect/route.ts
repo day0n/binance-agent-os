@@ -1,9 +1,9 @@
 import { disconnect } from "@/adapters/binance/oauth";
-import { owner, requireOrigin, apiError } from "@/adapters/http/session";
+import { requireWrite, apiError } from "@/adapters/http/session";
 export async function POST(request: Request) {
   try {
-    requireOrigin(request);
-    await disconnect(await owner());
+    const { userId } = await requireWrite(request);
+    await disconnect(userId);
     return Response.json({
       ok: true,
       message:

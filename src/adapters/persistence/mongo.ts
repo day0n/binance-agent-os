@@ -1,10 +1,20 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, type Db } from "mongodb";
 import { config } from "@/platform/config";
+import { schemaIndexes } from "./indexes";
 
 const globalDb = globalThis as typeof globalThis & {
   baoMongo?: Promise<MongoClient>;
   baoIndexes?: Promise<void>;
 };
+
+export async function ensureIndexes(db: Db) {
+  await Promise.all(
+    schemaIndexes.map((index) =>
+      db.collection(index.collection).createIndex(index.keys, index.options),
+    ),
+  );
+}
+
 export async function database() {
   const c = config();
   globalDb.baoMongo ??= new MongoClient(c.MONGODB_URI, {
@@ -19,23 +29,7 @@ export async function database() {
       throw error;
     });
   const db = (await globalDb.baoMongo).db(c.MONGODB_DB);
-  globalDb.baoIndexes ??= Promise.all([
-    db
-      .collection("runs")
-      .createIndex({ ownerId: 1, clientRequestId: 1 }, { unique: true }),
-    db.collection("runs").createIndex({ ownerId: 1, createdAt: -1 }),
-    db.collection("sessions").createIndex({ ownerId: 1, updatedAt: -1 }),
-    db
-      .collection("messages")
-      .createIndex({ ownerId: 1, sessionId: 1, createdAt: 1 }),
-    db.collection("artifacts").createIndex({ ownerId: 1, runId: 1 }),
-    db
-      .collection("oauth_states")
-      .createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
-    db
-      .collection("memories")
-      .createIndex({ ownerId: 1, symbol: 1, availableAt: -1 }),
-  ])
+  globalDb.baoIndexes ??= ensureIndexes(db)
     .then(() => undefined)
     .catch((error) => {
       globalDb.baoIndexes = undefined;
@@ -44,6 +38,7 @@ export async function database() {
   await globalDb.baoIndexes;
   return db;
 }
+
 export async function closeDatabase() {
   if (globalDb.baoMongo) await (await globalDb.baoMongo).close();
   globalDb.baoMongo = undefined;

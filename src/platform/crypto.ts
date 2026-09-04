@@ -13,9 +13,31 @@ export const sha256 = (value: unknown) =>
   createHash("sha256")
     .update(typeof value === "string" ? value : JSON.stringify(value))
     .digest("hex");
+
+export function randomToken(bytes = 32) {
+  return randomBytes(bytes).toString("base64url");
+}
+
+export function hashToken(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function constantTimeEqual(a: string, b: string) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export function deriveCsrfToken(sessionToken: string) {
+  return createHmac("sha256", config().AUTH_PEPPER)
+    .update(sessionToken)
+    .digest("base64url");
+}
+
 function key() {
   return createHash("sha256").update(config().APP_SECRET).digest();
 }
+
 export function encrypt(value: unknown) {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", key(), iv);
@@ -27,6 +49,7 @@ export function encrypt(value: unknown) {
     .map((b) => b.toString("base64url"))
     .join(".");
 }
+
 export function decrypt<T>(value: string): T {
   try {
     const [iv, tag, data] = value
@@ -44,23 +67,4 @@ export function decrypt<T>(value: string): T {
       401,
     );
   }
-}
-export function signSession(ownerId: string, expires: number) {
-  const payload = `${ownerId}.${expires}`;
-  return `${payload}.${createHmac("sha256", key()).update(payload).digest("base64url")}`;
-}
-export function verifySession(value: string): string | null {
-  const [id, expiry, mac, extra] = value.split(".");
-  if (
-    extra ||
-    !id ||
-    !/^[0-9a-f-]{36}$/.test(id) ||
-    !Number.isSafeInteger(Number(expiry)) ||
-    Number(expiry) <= Date.now()
-  )
-    return null;
-  const expected = signSession(id, Number(expiry)).split(".")[2];
-  const a = Buffer.from(mac ?? "");
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b) ? id : null;
 }

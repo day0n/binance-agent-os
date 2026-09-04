@@ -3,8 +3,8 @@ import { runInputSchema } from "@/domain/contracts";
 import { AppError } from "@/domain/errors";
 import { config, modelConfig } from "@/platform/config";
 import {
-  owner,
-  requireOrigin,
+  requireUser,
+  requireWrite,
   jsonBody,
   apiError,
 } from "@/adapters/http/session";
@@ -25,8 +25,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 export async function POST(request: Request) {
   try {
-    requireOrigin(request);
-    const id = await owner();
+    const { userId: id } = await requireWrite(request);
     const input = runInputSchema.safeParse(await jsonBody(request));
     if (!input.success)
       throw new AppError(
@@ -84,7 +83,7 @@ export async function POST(request: Request) {
 }
 export async function GET() {
   try {
-    const id = await owner();
+    const { userId: id } = await requireUser();
     const runs = await (
       await database()
     )

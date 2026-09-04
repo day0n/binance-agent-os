@@ -1,11 +1,11 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { randomUUID } from "node:crypto";
 import {
   encrypt,
   decrypt,
-  signSession,
-  verifySession,
   sha256,
+  randomToken,
+  hashToken,
+  constantTimeEqual,
 } from "@/platform/crypto";
 import { config } from "@/platform/config";
 import { publicError } from "@/domain/errors";
@@ -38,13 +38,13 @@ describe("credential and owner boundary", () => {
     });
     expect(() => decrypt(`AAAA.${a.split(".").slice(1).join(".")}`)).toThrow();
   });
-  it("rejects modified, expired and malformed owner cookies", () => {
-    const id = randomUUID();
-    const token = signSession(id, Date.now() + 60000);
-    expect(verifySession(token)).toBe(id);
-    expect(verifySession(token.replace(id, randomUUID()))).toBeNull();
-    expect(verifySession(signSession(id, Date.now() - 1))).toBeNull();
-    expect(verifySession("abc")).toBeNull();
+  it("stores only hashes of opaque auth tokens", () => {
+    const token = randomToken(32);
+    expect(hashToken(token)).not.toEqual(token);
+    expect(constantTimeEqual(hashToken(token), hashToken(token))).toBe(true);
+    expect(constantTimeEqual(hashToken(token), hashToken(randomToken(32)))).toBe(
+      false,
+    );
   });
   it("redacts unknown SDK failures", () => {
     const safe = publicError(

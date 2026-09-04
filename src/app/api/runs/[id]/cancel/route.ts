@@ -1,14 +1,14 @@
 import { getRun as getWorkflow } from "workflow/api";
 import { getRun, terminateRun } from "@/adapters/persistence/store";
-import { owner, requireOrigin, apiError } from "@/adapters/http/session";
+import { requireWrite, apiError } from "@/adapters/http/session";
 export const runtime = "nodejs";
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
-    requireOrigin(request);
-    const run = await getRun((await params).id, await owner());
+    const { userId } = await requireWrite(request);
+    const run = await getRun((await params).id, userId);
     await terminateRun(run._id, "cancelled");
     const current = await getRun(run._id, run.ownerId);
     if (current.status === "cancelled" && run.workflowId)

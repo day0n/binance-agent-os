@@ -2,9 +2,18 @@ import { z } from "zod";
 import { AppError } from "@/domain/errors";
 import { roleSchema, type AgentRole, type Provider } from "@/domain/contracts";
 
+export const HARD_ACTION_MAX_USDT = 5;
+export const HARD_ACTION_DAILY_MAX_USDT = 20;
+
+const boolEnv = z
+  .enum(["true", "false"])
+  .default("false")
+  .transform((value) => value === "true");
+
 const envSchema = z.object({
   APP_ORIGIN: z.string().url().default("http://localhost:3000"),
   APP_SECRET: z.string().min(64),
+  AUTH_PEPPER: z.string().min(32).optional(),
   MONGODB_URI: z.string().min(1),
   MONGODB_DB: z
     .string()
@@ -38,6 +47,24 @@ const envSchema = z.object({
   ROLE_MODELS_JSON: z.string().default("{}"),
   BINANCE_CLIENT_METADATA_URL: z.string().optional(),
   BINANCE_TOOL_BINDINGS_JSON: z.string().default("{}"),
+  BINANCE_WRITES_ENABLED: boolEnv,
+  BINANCE_PRODUCTION_WRITES_ENABLED: boolEnv,
+  ACTION_MAX_USDT: z.coerce
+    .number()
+    .positive()
+    .max(HARD_ACTION_MAX_USDT)
+    .default(HARD_ACTION_MAX_USDT),
+  ACTION_DAILY_MAX_USDT: z.coerce
+    .number()
+    .positive()
+    .max(HARD_ACTION_DAILY_MAX_USDT)
+    .default(HARD_ACTION_DAILY_MAX_USDT),
+  EXECUTOR_URL: z.string().url().optional(),
+  EXECUTOR_GCP_PROJECT: z.string().optional(),
+  GCP_WIF_PROVIDER: z.string().optional(),
+  GCP_WIF_SERVICE_ACCOUNT: z.string().optional(),
+  KMS_KEY_RESOURCE: z.string().optional(),
+  KMS_PUBLIC_KEY: z.string().optional(),
   RUN_MAX_MODEL_CALLS: z.coerce.number().int().min(1).max(60).default(24),
   RUN_MAX_TOOL_CALLS: z.coerce.number().int().min(1).max(100).default(36),
   RUN_MAX_TOKENS: z.coerce.number().int().min(1000).max(200000).default(60000),
@@ -56,6 +83,9 @@ export function config() {
   const redisUrl = v.BAO_REDIS_URL ?? v.REDIS_URL;
   if (!redisUrl)
     throw new AppError("CONFIG_MISSING", "服务端配置未完成：REDIS_URL", 503);
+  const AUTH_PEPPER = v.AUTH_PEPPER ?? (v.APP_ENV === "production" ? "" : v.APP_SECRET);
+  if (!AUTH_PEPPER)
+    throw new AppError("CONFIG_MISSING", "服务端配置未完成：AUTH_PEPPER", 503);
   if (
     v.APP_ENV === "production" &&
     (v.MONGODB_DB !== "binance_agent_os" ||
@@ -72,7 +102,22 @@ export function config() {
       "开发或预览环境不能使用生产数据库。",
       503,
     );
-  return { ...v, REDIS_URL: redisUrl };
+  if (v.BINANCE_PRODUCTION_WRITES_ENABLED && !v.BINANCE_WRITES_ENABLED)
+    throw new AppError(
+      "CONFIG_INVALID",
+      "开启生产写入前必须先开启 BINANCE_WRITES_ENABLED。",
+      503,
+    );
+  return {
+    ...v,
+    REDIS_URL: redisUrl,
+    AUTH_PEPPER,
+    ACTION_MAX_USDT: Math.min(v.ACTION_MAX_USDT, HARD_ACTION_MAX_USDT),
+    ACTION_DAILY_MAX_USDT: Math.min(
+      v.ACTION_DAILY_MAX_USDT,
+      HARD_ACTION_DAILY_MAX_USDT,
+    ),
+  };
 }
 export function modelConfig(provider: Provider, role?: AgentRole) {
   const c = config();

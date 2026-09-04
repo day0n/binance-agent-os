@@ -1,15 +1,19 @@
-import { owner, apiError } from "@/adapters/http/session";
+import { optionalUser, apiError } from "@/adapters/http/session";
 import { connectionStatus } from "@/adapters/binance/oauth";
 import { config } from "@/platform/config";
 import { parseBindings } from "@/adapters/binance/policy";
 export const dynamic = "force-dynamic";
 export async function GET() {
   try {
-    const id = await owner(true);
+    const auth = await optionalUser();
     const c = config();
     return Response.json(
       {
-        connection: await connectionStatus(id),
+        user: auth?.user ?? null,
+        csrfToken: auth?.csrfToken ?? null,
+        connection: auth
+          ? await connectionStatus(auth.userId)
+          : { connected: false, connectedAt: null, expiresAt: null },
         mcp: {
           websiteOAuthSupported: false,
           supportedClient: "Codex",
@@ -36,7 +40,13 @@ export async function GET() {
           },
         ],
         capabilities: Object.keys(parseBindings(c.BINANCE_TOOL_BINDINGS_JSON)),
-        readOnly: true,
+        writesEnabled: c.BINANCE_WRITES_ENABLED,
+        productionWritesEnabled: c.BINANCE_PRODUCTION_WRITES_ENABLED,
+        actionLimits: {
+          maxUsdt: c.ACTION_MAX_USDT,
+          dailyMaxUsdt: c.ACTION_DAILY_MAX_USDT,
+        },
+        readOnly: !c.BINANCE_WRITES_ENABLED,
       },
       { headers: { "Cache-Control": "no-store" } },
     );

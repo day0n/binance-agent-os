@@ -1,4 +1,4 @@
-import { owner, apiError } from "@/adapters/http/session";
+import { apiError } from "@/adapters/http/session";
 import { database } from "@/adapters/persistence/mongo";
 import { redis } from "@/adapters/persistence/redis";
 import { config } from "@/platform/config";
@@ -10,7 +10,6 @@ let cached:
   | undefined;
 export async function GET() {
   try {
-    await owner();
     if (!cached || cached.until < Date.now())
       cached = {
         until: Date.now() + 30000,

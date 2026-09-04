@@ -1,10 +1,9 @@
 import { discoverTools } from "@/adapters/binance/client";
-import { owner, apiError, requireOrigin } from "@/adapters/http/session";
+import { requireWrite, apiError } from "@/adapters/http/session";
 import { rateLimit } from "@/adapters/persistence/redis";
 export async function POST(request: Request) {
   try {
-    requireOrigin(request);
-    const id = await owner();
+    const { userId: id } = await requireWrite(request);
     await rateLimit(`discover:${id}`, 5, 60);
     return Response.json(
       { tools: await discoverTools(id) },

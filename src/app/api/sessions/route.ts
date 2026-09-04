@@ -1,13 +1,13 @@
 import { database } from "@/adapters/persistence/mongo";
 import type { SessionRecord } from "@/adapters/persistence/store";
-import { owner, apiError } from "@/adapters/http/session";
+import { requireUser, apiError } from "@/adapters/http/session";
 export async function GET() {
   try {
     const sessions = await (
       await database()
     )
       .collection<SessionRecord>("sessions")
-      .find({ ownerId: await owner() })
+      .find({ ownerId: (await requireUser()).userId })
       .sort({ updatedAt: -1 })
       .limit(50)
       .project({ ownerId: 0 })

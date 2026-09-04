@@ -1,5 +1,5 @@
 import { completeAuthorization } from "@/adapters/binance/oauth";
-import { owner } from "@/adapters/http/session";
+import { requireUser } from "@/adapters/http/session";
 import { config } from "@/platform/config";
 import { publicError } from "@/domain/errors";
 export const runtime = "nodejs";
@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const redirect = new URL("/", config().APP_ORIGIN);
   try {
     await completeAuthorization(
-      await owner(),
+      (await requireUser()).userId,
       url.searchParams.get("state") ?? "",
       url.searchParams.get("error") ? null : url.searchParams.get("code"),
     );
